@@ -1,7 +1,7 @@
 // Desk Watch: JOY STUDENT EDITION — Temp & Hum / Timer / Counter / Stopwatch / Alarm / Dice / Chess clock / Melody / Clock, joystick-controlled
 // Hardware : Arduino UNO + Grove Base Shield, LCD RGB V4.0 (I2C),
 //            SHT31 or SHT40 (I2C 0x44, auto-detected), buzzer D3, Grove Thumb Joystick A1 (X) and A2 (Y) instead of button D4 and dial A1,
-//            optional RTC DS1307 / DS3231 (I2C 0x68).
+//            RTC DS1307 / DS3231 (I2C 0x68, required).
 // Required library: "Grove - LCD RGB Backlight" (rgb_lcd.h).
 // SHT31 and RTC are read directly over I2C: no other library needed.
 //
