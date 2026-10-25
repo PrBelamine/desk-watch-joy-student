@@ -2,6 +2,8 @@
 
 A compact desk console built around an **Arduino UNO R3**, a **Grove Base Shield** and one small **thumb joystick**. It shows temperature and humidity, warns you when the room goes out of range, and runs a Pomodoro timer, a stopwatch, a counter, a dice roller, a two-player chess clock and a melody player. Every module plugs in with a standard Grove cable, no soldering. Made for students, to build and use at home or in class.
 
+![Desk Watch JOY STUDENT](docs/photos/joy_student_banner.jpg)
+
 ![Desk Watch JOY STUDENT](docs/photos/joy_student_cover.jpg)
 
 ![Wiring diagram](docs/wiring_EN.png)
