@@ -1,7 +1,7 @@
 // Desk Watch : JOY STUDENT EDITION — température et humidité / minuteur Pomodoro / chronomètre / compteur / dé / pendule d’échecs / réveil / horloge, au joystick
 // Matériel : Arduino UNO + Grove Base Shield, écran LCD RGB V4.0 (I2C),
 //            SHT31 ou SHT40 (I2C 0x44, détecté automatiquement), buzzer D3, Grove Thumb Joystick A1 (X) et A2 (Y) à la place du bouton D4 et de la molette,
-//            module RTC DS1307 ou DS3231 en option (I2C 0x68).
+//            module RTC DS1307 ou DS3231 (I2C 0x68, obligatoire).
 // Bibliothèque requise : « Grove - LCD RGB Backlight » (rgb_lcd.h).
 // Le SHT31 et le RTC sont lus directement en I2C : aucune autre bibliothèque nécessaire.
 //
