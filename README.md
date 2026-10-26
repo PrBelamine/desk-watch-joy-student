@@ -13,7 +13,7 @@ A compact desk console built around an **Arduino UNO R3**, a **Grove Base Shield
 ## What it does
 
 - Temperature and humidity on a 16x2 RGB LCD. The sensor can be a Grove **SHT31 or SHT40**: the firmware detects it automatically. Adjustable thresholds: the screen turns red, blue or green and the buzzer warns you.
-- Menu of 11 entries: Favorite, Temp & Hum, Timer (Pomodoro), Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings, Screen sleep.
+- Menu of 10 entries: Temp & Hum, Timer (Pomodoro), Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings and Screen sleep. The startup favorite is selected in Settings; it is not a menu entry.
 - Dice: D2 (coin flip) up to D100.
 - Chess clock with several time controls and increment.
 - Settings: brightness, volume, boot sound, automatic sleep, night mode, set time, favorite page.

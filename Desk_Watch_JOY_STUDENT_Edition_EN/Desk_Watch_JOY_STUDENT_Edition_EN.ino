@@ -1,7 +1,7 @@
 // Desk Watch: JOY STUDENT EDITION — Temp & Hum / Timer / Counter / Stopwatch / Alarm / Dice / Chess clock / Melody / Clock, joystick-controlled
 // Hardware : Arduino UNO + Grove Base Shield, LCD RGB V4.0 (I2C),
 //            SHT31 or SHT40 (I2C 0x44, auto-detected), buzzer D3, Grove Thumb Joystick A1 (X) and A2 (Y) instead of button D4 and dial A1,
-//            RTC DS1307 / DS3231 (I2C 0x68, required).
+//            optional RTC DS1307 / DS3231 (I2C 0x68).
 // Required library: "Grove - LCD RGB Backlight" (rgb_lcd.h).
 // SHT31 and RTC are read directly over I2C: no other library needed.
 //
@@ -94,7 +94,7 @@ static const char TXT_Sensor_OK_26[] PROGMEM = "Sensor OK";
 static const char TXT_Sensor_ausente_27[] PROGMEM = "Sensor ausente";
 static const char TXT_Sensor_fehlt_28[] PROGMEM = "Sensor fehlt";
 static const char TXT_Sensor_missing_29[] PROGMEM = "Sensor missing";
-static const char TXT_TIMER_d_30[] PROGMEM = "TIMER    #%d";
+
 static const char TXT_Volume_31[] PROGMEM = "Volume";
 #define TR_PTR(fr, en, es, de) (en)
 
@@ -132,8 +132,8 @@ const uint8_t BRIGHT_LEVELS[8] = { 5, 10, 20, 30, 50, 70, 85, 100 };   // % of t
 // ---------- State ----------
 rgb_lcd lcd;
 
-enum { M_TH, M_POMO, M_CHRONO, M_TALLY, M_DIE, M_CHESS, M_MUSIC, M_PARAMS, M_HOME, M_ALARM, M_SETCLOCK, M_BRIGHT, M_MENU, M_CLOCK };
-const uint8_t N_MENU = 11;
+enum { M_TH, M_POMO, M_CHRONO, M_TALLY, M_DIE, M_CHESS, M_MUSIC, M_PARAMS, M_HOME, M_ALARM, M_SETCLOCK, M_BRIGHT, M_MENU, M_CLOCK, M_SLEEP };
+const uint8_t N_MENU = 10;
 const uint8_t N_PAR = 7;   // visible settings (the language choice was removed: one language per edition)
 uint8_t mode = M_HOME, prevMode = M_HOME;   // M_* values
 uint8_t menuIdx = 0;
@@ -158,7 +158,11 @@ uint8_t tState = 0, hState = 0;   // 0 OK, 1 TOO HIGH, 2 TOO LOW
 
 // alarm
 uint8_t clockSub = 0;       // Set time page: 1 hours, 2 minutes
-uint8_t alarmSub = 0;       // 0 view, 1 hours, 2 minutes, 3 armed, 4 melody, 5 volume
+uint8_t alarmSub = 0;       // 0 activation, 1 hours, 2 minutes, 3 melody, 4 volume, 5 confirmation.
+bool alarmExitPending = false;
+unsigned long alarmExitAt = 0;
+bool alarmSavedPending = false;
+unsigned long alarmSavedReturnAt = 0;
 // Separate EEPROM extension preserves the existing settings and their addresses.
 struct AlarmSettings { uint8_t magic, melody, volume; } alarmCfg;
 uint8_t alarmPos = 0;
@@ -168,6 +172,7 @@ uint8_t previewMelody = 0, previewVolume = 0;
 uint8_t parSub = 0, parBackup = 0;   // setting open? value before editing
 uint8_t parIdx = 1;          // Settings page (internal ids): 1 brightness, 2 volume, 3 startup sound, 4 auto sleep, 5 night mode, 6 set time, 7 favorite
 unsigned int tallyCount = 0;  // hand tally counter
+bool tallyRun = true;
 uint8_t tallySub = 0;         // 0 counting, 1 reset confirmation
 unsigned long tallyT0 = 0;
 unsigned long tapMs = 0;      // time of the last short press release
@@ -302,7 +307,12 @@ uint8_t musicState = 0, musicPos = 0;  // 0 ready, 1 playing, 2 paused ; next no
 int musicRemain = 0;                  // time left on the current note (ms)
 unsigned int musicFreq = 0;
 unsigned long musicNoteEnd = 0;
-uint8_t thSub = 0;          // threshold setting: 0 view, 1 T low, 2 T high, 3 H low, 4 H high
+uint8_t thSub = 0;          // 0 = display, 1-4 = thresholds, 5 = confirmation.
+bool thSavedPending = false;
+unsigned long thSavedReturnAt = 0;
+uint8_t thView = 0, thSampleCount = 0, thSamplePos = 0;
+int16_t thTempSamples[30] = {0}, thHumSamples[30] = {0};
+int32_t thTempSum = 0, thHumSum = 0;
 uint8_t edH = 0, edM = 0;
 bool ringing = false, snoozing = false;
 bool standby = false;       // sleep: screen off, alarm still active
@@ -326,7 +336,7 @@ unsigned long chronoStart = 0, chronoAccum = 0;
 unsigned long chronoMs() { return chronoRun ? millis() - chronoStart : chronoAccum; }
 
 // potentiometer / display
-bool chessHold = false; uint8_t stickPush = 0; bool potActive = false; int stickDelta = 0; bool stickFast = false, stickAct = false;   // Pending left / right steps; long hold; joystick activity.
+bool chessHold = false; uint8_t stickPush = 0; bool joystickClicked = false, rightGesture = false; bool potActive = false; int stickDelta = 0; bool stickFast = false, stickAct = false;   // Pending left / right steps; long hold; joystick activity.
 uint8_t lastR = 255, lastG = 255, lastB = 255;
 unsigned long lastDraw = 0, lastClockRead = 0, lastSht = 0;
 
@@ -367,17 +377,56 @@ bool nightActive() {
   return cfg.night == 1 && rtcPresent && (nowH >= NIGHT_START || nowH < NIGHT_END);
 }
 bool nightPrev = false;
+bool validationFlashActive = false;
+unsigned long validationFlashDuration = 1000UL;
+unsigned long validationFlashStart = 0;
 
 // applies the requested colour, scaled by the chosen brightness (and dimmed at night, except while ringing)
 void applyColor() {
+  unsigned long elapsed = millis() - validationFlashStart;
+  bool flashOn = validationFlashActive && elapsed < validationFlashDuration;
   uint8_t k = (nightActive() && !ringing) ? 8 : 100;
   nightPrev = nightActive();
-  lcd.setRGB((uint32_t)lastR * cfg.bright * k / 10000,
-             (uint32_t)lastG * cfg.bright * k / 10000,
-             (uint32_t)lastB * cfg.bright * k / 10000);
+  uint8_t r = flashOn ? 0 : lastR;
+  uint8_t g = flashOn ? 200 : lastG;
+  uint8_t b = flashOn ? 45 : lastB;
+  lcd.setRGB((uint32_t)r * cfg.bright * k / 10000,
+             (uint32_t)g * cfg.bright * k / 10000,
+             (uint32_t)b * cfg.bright * k / 10000);
 }
 
 void color(uint8_t r, uint8_t g, uint8_t b) {
+  bool statusColor =
+      (r == 255 && b == 0 && (g == 0 || g == 90 || g == 110)) ||
+      (r == 220 && g == 30 && b == 0) ||
+      (r == 200 && g == 110 && b == 0) ||
+      (r == 255 && g == 110 && b == 0) ||
+      (r == 0 && g == 80 && (b == 255 || b == 220)) ||
+      (r == 0 && g == 160 && b == 40) ||
+      (r == 0 && g == 170 && b == 50) ||
+      (r == 0 && g == 140 && b == 170) ||
+      (r == 60 && g == 60 && (b == 60 || b == 120));
+  if (mode == M_TH && r == 0 && g == 160 && b == 40) statusColor = false;
+  if (!statusColor) {
+    switch (mode) {
+    case M_TH: r=0; g=145; b=145; break;
+    case M_POMO: r=205; g=80; b=0; break;
+    case M_CHRONO: r=0; g=105; b=205; break;
+    case M_TALLY: r=0; g=155; b=45; break;
+    case M_DIE: r=125; g=40; b=170; break;
+    case M_CHESS: r=170; g=40; b=125; break;
+    case M_MUSIC: r=95; g=45; b=180; break;
+    case M_PARAMS: r=40; g=80; b=160; break;
+    case M_HOME: r=0; g=130; b=120; break;
+    case M_ALARM: r=205; g=30; b=0; break;
+    case M_SETCLOCK: r=165; g=95; b=0; break;
+    case M_BRIGHT: r=30; g=100; b=180; break;
+    case M_MENU: r=0; g=105; b=155; break;
+    case M_CLOCK: r=35; g=85; b=155; break;
+    case M_SLEEP: r=255; g=0; b=0; break;
+    default: break;
+    }
+  }
   if (r == lastR && g == lastG && b == lastB) return;
   lastR = r; lastG = g; lastB = b;
   applyColor();
@@ -390,6 +439,20 @@ __attribute__((noinline, noclone)) void writeLcdLine(uint8_t row, const char* s,
     uint8_t c = flash ? pgm_read_byte(s) : *s;
     if (c) s++; else c = ' ';
     lcd.write(c);
+  }
+}
+void startValidationFlash(unsigned long duration = 1000UL) {
+  validationFlashDuration = duration;
+  validationFlashActive = true;
+  validationFlashStart = millis();
+  applyColor();
+}
+
+void updateValidationFlash() {
+  if (!validationFlashActive) return;
+  if (millis() - validationFlashStart >= validationFlashDuration) {
+    validationFlashActive = false;
+    applyColor();
   }
 }
 void line(uint8_t row, const char* s) { writeLcdLine(row, s, false); }
@@ -564,7 +627,9 @@ void stickCalibrate() {
 // Replaces the old readButton(): the joystick produces the same events as the button (EV_SHORT, EV_DOUBLE, EV_LONG, EV_VLONG, EV_PRESS)
 // and drives the virtual dial (stickDelta, potActive).
 uint8_t readButton() {
-  static bool pending = false, musicHandled = false, vlongDone = false, holdDone = false;
+  joystickClicked = false;
+  rightGesture = false;
+  static bool pending = false, pendingClick = false, pendingRight = false, musicHandled = false, vlongDone = false, holdDone = false;
   static unsigned long tUp = 0, calm = 0;
   unsigned long now = millis();
   int rx = adc(PIN_STICK_X), ry = adc(PIN_STICK_Y);
@@ -596,8 +661,8 @@ uint8_t readButton() {
   bool clickOk = (s == SE_CLICK && !standby && !ringing && !(mode == M_CHESS && chessState == 1));   // Clic sur la tête = OK, comme haut.
   if (r == SE_UP || clickOk) {
     tapFlag = true; tapMs = now;                              // Counts immediately (counter, dice, clock).
-    if (pending && now - tUp <= DOUBLE_STICK_MS) { pending = false; musicHandled = false; return EV_DOUBLE; }
-    pending = true; tUp = now;
+    if (pending && now - tUp <= DOUBLE_STICK_MS) { pending = false; pendingClick = false; pendingRight = false; musicHandled = false; return EV_DOUBLE; }
+    pending = true; pendingClick = clickOk; pendingRight = NAV_VERTICAL && s == SE_RIGHT; tUp = now;
     if (mode == M_MUSIC && !ringing) { musicHandled = true; return EV_PRESS; }
     return EV_NONE;
   }
@@ -607,9 +672,9 @@ uint8_t readButton() {
     potActive = true;
     return (standby || ringing) ? EV_SHORT : EV_NONE;          // Wakes the device or snoozes the alarm.
   }
-  if (r == SE_DOWN) { pending = false; musicHandled = false; return EV_LONG; }
+  if (r == SE_DOWN) { pending = false; pendingClick = false; pendingRight = false; musicHandled = false; return EV_LONG; }
   if (s == SE_CLICK) {
-    pending = false; musicHandled = false;
+    pending = false; pendingClick = false; pendingRight = false; musicHandled = false;
     if (standby || ringing) return EV_SHORT;
     return EV_DOUBLE;                                          // Pendule en cours : pause (seul cas restant).
   }
@@ -619,6 +684,10 @@ uint8_t readButton() {
   if (st.held == backDir && !vlongDone && now - st.tStart >= VLONG_STICK_MS) { vlongDone = true; return EV_VLONG; }
   if (pending && now - tUp > DOUBLE_STICK_MS) {                // Single push up: confirmed when the double-click delay has elapsed.
     pending = false;
+    joystickClicked = pendingClick;
+    rightGesture = pendingRight;
+    pendingClick = false;
+    pendingRight = false;
     if (musicHandled) { musicHandled = false; if (!ringing) return EV_NONE; }
     return EV_SHORT;
   }
@@ -650,7 +719,7 @@ void loadCfg() {
     alarmCfg.magic = 0xB1; alarmCfg.melody = 0; alarmCfg.volume = cfg.volume;
   }
 }
-void saveCfg() { EEPROM.put(0, cfg); EEPROM.put(sizeof(cfg), alarmCfg); }
+void saveCfg(unsigned long validationDuration = 1000UL) { EEPROM.put(0, cfg); EEPROM.put(sizeof(cfg), alarmCfg); startValidationFlash(validationDuration); }
 
 // ---------- Clock ----------
 void readClock() {
@@ -684,6 +753,7 @@ void setClock(uint8_t h, uint8_t m) {
     swRefMs = millis();
   }
   readClock();
+  startValidationFlash();
 }
 
 // ---------- SHT31 ----------
@@ -738,6 +808,11 @@ bool readSht() {
   hum10  = (shtType == 1 ? (int)((1000L * rh) / 65535L) : (int)((1250L * rh) / 65535L) - 60) + HUM_OFFSET10;   // SHT31: 100 * S / 65535; SHT40: -6 + 125 * S / 65535
   if (hum10 < 0) hum10 = 0;
   if (hum10 > 1000) hum10 = 1000;
+  if (thSampleCount == 30) { thTempSum -= thTempSamples[thSamplePos]; thHumSum -= thHumSamples[thSamplePos]; }
+  else thSampleCount++;
+  thTempSamples[thSamplePos] = temp10; thHumSamples[thSamplePos] = hum10;
+  thTempSum += temp10; thHumSum += hum10;
+  thSamplePos = (thSamplePos + 1) % 30;
   return true;
 }
 
@@ -869,7 +944,7 @@ void enterMode(uint8_t m) {
   if (mode == M_CHESS && m != M_CHESS) chessPause();
   if (mode == M_MUSIC && m != M_MUSIC) musicToneStop();
   mode = m;
-  clockSub = 0; alarmSub = 0; thSub = 0; parIdx = 1; parSub = 0; tallySub = 0;
+  clockSub = 0; alarmSub = 0; alarmExitPending = false; alarmSavedPending = false; thSub = 0; thSavedPending = false; thView = 0; parIdx = 1; parSub = 0; tallySub = 0;
   if (m == M_DIE) dieRolling = false;
   if (m == M_MUSIC) { musicState = 0; musicPos = 0; musicRemain = 0; }
   potReset();
@@ -908,10 +983,10 @@ void openMenu() {
 
 void backToMenu() {
   if (mode == M_MENU) { enterMode(prevMode); return; }          // in the menu: back to the page
-  if (mode == M_BRIGHT) { cfg.bright = brightBackup; applyColor(); }   // cancels the brightness change
+  if (mode == M_BRIGHT) { cfg.bright = brightBackup; applyColor(); backToParams(1); return; }   // cancels the brightness change
   if (mode == M_ALARM && alarmSub != 0) saveCfg();
   if (mode == M_TH && thSub != 0) saveCfg();
-  if (mode == M_PARAMS && parSub != 0) setParValue(parIdx, parBackup);   // cancels the setting being edited
+  if (mode == M_PARAMS && parSub != 0) { setParValue(parIdx, parBackup); parSub = 0; potReset(); lastDraw = 0; return; }
   openMenu();
 }
 
@@ -943,7 +1018,6 @@ uint8_t menuMode(uint8_t i);
 void sleepNow();
 void drawMenu(uint8_t e, bool draw) {
   static const char names[] PROGMEM =
-  "Favorite\0"
   "Temp & Hum\0"
   "Timer\0"
   "Counter\0"
@@ -956,11 +1030,14 @@ void drawMenu(uint8_t e, bool draw) {
   "Sleep mode\0"
 ;
   if (potLive()) menuIdx = menuFromPot();
-  if (e == EV_SHORT) { if (menuIdx == N_MENU - 1) sleepNow(); else if (menuIdx == 0) goHome(); else enterMode(menuMode(menuIdx)); return; }
+  if (e == EV_SHORT) { if (menuIdx == N_MENU - 1) sleepNow(); else enterMode(menuMode(menuIdx)); return; }
   if (e == EV_LONG || e == EV_VLONG) { enterMode(prevMode); return; }
   if (!draw) return;
   char b[17];
-  color(40, 80, 160);
+  uint8_t displayMode = mode;
+  mode = menuIdx == N_MENU - 1 ? M_SLEEP : menuMode(menuIdx);
+  color(0, 0, 0);
+  mode = displayMode;
   snprintf_P(b, sizeof(b), PSTR("MENU       %2d/%d"), menuIdx + 1, N_MENU);
   line(0, b);
   char nm[13]; strcpy_P(nm, packedText(names, menuIdx));
@@ -970,7 +1047,7 @@ void drawMenu(uint8_t e, bool draw) {
 }
 
 uint8_t menuMode(uint8_t i) {
-  static const uint8_t modes[N_MENU] PROGMEM = { M_HOME, M_TH, M_POMO, M_TALLY, M_CHRONO, M_ALARM, M_DIE, M_CHESS, M_MUSIC, M_PARAMS, M_HOME };
+  static const uint8_t modes[N_MENU] PROGMEM = { M_TH, M_POMO, M_TALLY, M_CHRONO, M_ALARM, M_DIE, M_CHESS, M_MUSIC, M_PARAMS, M_HOME };
   return pgm_read_byte(&modes[i]);
 }
 
@@ -1123,36 +1200,66 @@ void thEdit(uint8_t sub) {
 }
 
 void drawTempHum(uint8_t e, bool draw) {
+  if (thSavedPending) {
+    if ((long)(millis() - thSavedReturnAt) >= 0) {
+      thSavedPending = false;
+      thSub = 0;
+      potReset();
+      e = EV_NONE;
+      rightGesture = false;
+      stickPush = SE_NONE;
+      draw = true;
+    } else {
+      if (!draw) return;
+      color(150, 100, 0);
+      lineP(0, TR("     Choix      ", "     Choose     ", "     Elegir     ", "    Auswahl     "));
+      lineP(1, PSTR("       OK       "));
+      lcd.setCursor(15, 1); lcd.write((uint8_t)3);
+      return;
+    }
+  }
+  if (e == EV_LONG && thSub != 0) { thSub--; potReset(); e = EV_NONE; }
   if (thSub == 0) {
-    if (e == EV_DOUBLE)    { thSub = 1; potReset(); }     // set the four thresholds
+    if (e == EV_SHORT && rightGesture) { thSub = 1; potReset(); }
     else if (e != EV_NONE) { openMenu(); return; }
+  } else if (thSub == 5) {
+    if (e == EV_SHORT && rightGesture) {
+      saveCfg(1500UL);
+      thSavedPending = true;
+      thSavedReturnAt = millis() + 1500UL;
+      potReset();
+    }
   } else if (e == EV_SHORT) {
     if (thSub < 4) { thSub++; potReset(); }
-    else           { thSub = 0; saveCfg(); potReset(); }
+    else { thSub = 5; potReset(); }
   }
-  if (thSub != 0 && potLive()) thEdit(thSub);
-  if (thSub == 0 && potLive()) { openMenu(); return; }   // turning the dial opens the menu
-
+  if (thSub >= 1 && thSub <= 4 && potLive()) thEdit(thSub);
+  if (thSub == 0 && potLive()) {
+    if (stickPush == SE_DOWN) thView = (thView + 1) % 3;
+    else if (stickPush == SE_UP) thView = (thView + 2) % 3;
+    potReset();
+  }
   if (!draw) return;
   char b[17];
-  if (thSub != 0) {
-    static const char titles[] PROGMEM =
-      "Temp too low\0"
-      "Temp too high\0"
-      "Humid too low\0"
-      "Humid too high\0";
-    color(150, 100, 0);
-    lineP(0, packedText(titles, thSub - 1));
-    uint8_t v = *thPtr(thSub);
-    if (thSub <= 2) snprintf_P(b, sizeof(b), PSTR("\002\001 T%s%d.%dC OK"), thSub == 1 ? "<=" : ">=", v / 2, (v % 2) * 5);
-    else            snprintf_P(b, sizeof(b), PSTR("\002\001 H%s%d%% OK"),   thSub == 3 ? "<=" : ">=", v);
-    line(1, b);
-    return;
-  }
-  // The clock and background badges remain visible even during a sensor alert.
   if (rtcPresent) snprintf_P(b, sizeof(b), PSTR("%02d:%02d:%02d"), nowH, nowM, nowS);
   else strcpy_P(b, PSTR("--:--:--"));
   line(0, b); badges(M_TH);
+  if (thSub == 5) {
+    color(150, 100, 0);
+    lineP(0, TR("     Choix      ", "     Choose     ", "     Elegir     ", "    Auswahl     "));
+    lineP(1, PSTR("       OK       "));
+    lcd.setCursor(15, 1); lcd.write((uint8_t)3);
+    return;
+  }
+  if (thSub != 0) {
+    color(150, 100, 0);
+    uint8_t v = *thPtr(thSub);
+    if (thSub <= 2) snprintf_P(b, sizeof(b), PSTR("\002\001 %s %d.%d%c"), thSub == 1 ? "Tmin" : "Tmax", v / 2, (v % 2) * 5, 0xDF);
+    else snprintf_P(b, sizeof(b), PSTR("\002\001 %s %d%%"), thSub == 3 ? "Hmin" : "Hmax", v);
+    line(1, b);
+    lcd.setCursor(15, 1); lcd.write((uint8_t)3);
+    return;
+  }
   if (!shtOk) {
     color(60, 60, 60);
     lineP(1, TR_PTR(TXT_Capteur_absent_9, TXT_Sensor_missing_29, TXT_Sensor_ausente_27, TXT_Sensor_fehlt_28));
@@ -1160,6 +1267,35 @@ void drawTempHum(uint8_t e, bool draw) {
   }
 
   // Second row: measurements / full alert, with measurements before each alert.
+  if (thView == 1) {
+    int16_t tLo = thTempSamples[0], tHi = thTempSamples[0];
+    int16_t hLo = thHumSamples[0], hHi = thHumSamples[0];
+    for (uint8_t i = 1; i < thSampleCount; i++) {
+      if (thTempSamples[i] < tLo) tLo = thTempSamples[i];
+      if (thTempSamples[i] > tHi) tHi = thTempSamples[i];
+      if (thHumSamples[i] < hLo) hLo = thHumSamples[i];
+      if (thHumSamples[i] > hHi) hHi = thHumSamples[i];
+    }
+    bool showMin = ((millis() / 2500UL) % 2 == 0);
+    int16_t tExtreme = showMin ? tLo : tHi;
+    int16_t hExtreme = showMin ? hLo : hHi;
+    int textLen = snprintf_P(b, sizeof(b), PSTR("%s T%s%d.%d%c H%d%%"), showMin ? "MIN" : "MAX",
+                             tExtreme < 0 ? "-" : "", abs(tExtreme)/10, abs(tExtreme)%10, 0xDF, (hExtreme + 5)/10);
+    if (textLen > 16)
+      snprintf_P(b, sizeof(b), PSTR("%sT%s%d.%d%cH%d%%"), showMin ? "MIN" : "MAX",
+                 tExtreme < 0 ? "-" : "", abs(tExtreme)/10, abs(tExtreme)%10, 0xDF, (hExtreme + 5)/10);
+    line(1, b);
+    return;
+  }
+  if (thView == 2) {
+    int16_t tAvg = thSampleCount ? thTempSum / thSampleCount : temp10;
+    int16_t hAvg = thSampleCount ? thHumSum / thSampleCount : hum10;
+    int textLen = snprintf_P(b, sizeof(b), TR("MOY T%s%d.%d%c H%d%%", "AVG T%s%d.%d%c H%d%%", "PROM T%s%d.%d%c H%d%%", "DUR T%s%d.%d%c H%d%%"), tAvg < 0 ? "-" : "", abs(tAvg)/10, abs(tAvg)%10, 0xDF, (hAvg + 5)/10);
+    if (textLen > 16)
+      snprintf_P(b, sizeof(b), TR("MOYT%s%d.%d%cH%d%%", "AVGT%s%d.%d%cH%d%%", "PROMT%s%d.%d%cH%d%%", "DURT%s%d.%d%cH%d%%"), tAvg < 0 ? "-" : "", abs(tAvg)/10, abs(tAvg)%10, 0xDF, (hAvg + 5)/10);
+    line(1, b);
+    return;
+  }
   PGM_P msg[2]; uint8_t states[2], n = 0;
   if (tState) {
     states[n] = tState;
@@ -1183,6 +1319,7 @@ void drawTempHum(uint8_t e, bool draw) {
 }
 
 void drawSetClock(uint8_t e, bool draw) {
+  if (e == EV_LONG) { if (clockSub > 1) { clockSub--; potReset(); } else { backToParams(6); return; } e = EV_NONE; }
   if (!rtcPresent) {
     if (e != EV_NONE || potLive()) backToParams(6);
     else if (draw) noRtcScreen();
@@ -1203,49 +1340,82 @@ void drawSetClock(uint8_t e, bool draw) {
   line(1, b);
 }
 
+bool serviceAlarmExit(bool draw) {
+  if (!alarmExitPending) return false;
+  if ((long)(millis() - alarmExitAt) >= 0) {
+    alarmExitPending = false;
+  alarmSavedPending = false;
+    openMenu();
+    return true;
+  }
+  if (draw) {
+    color(150, 70, 0);
+    lineP(0, TR("Desactivation", "Disabling", "Desactivando", "Deaktivieren"));
+    lineP(1, TR("OK", "OK", "OK", "OK"));
+  }
+  return true;
+}
 void drawAlarm(uint8_t e, bool draw) {
+  if (e == EV_LONG && alarmSub != 0 && !alarmSavedPending) { alarmSub--; potReset(); e = EV_NONE; }
   if (!rtcPresent) {
     if (e != EV_NONE || potLive()) { openMenu(); return; }
     if (draw) { color(60, 60, 120); lineP(0, TR("Alarme : il faut", "Alarm: needs the", "Alarma: requiere", "Wecker: braucht")); lineP(1, TR("le module RTC", "RTC module", "modulo RTC", "RTC-Modul")); }
     return;
   }
+  if (alarmSavedPending) {
+    if ((long)(millis() - alarmSavedReturnAt) >= 0) {
+      alarmSavedPending = false;
+      alarmSub = 0;
+      openMenu();
+      return;
+    } else {
+      if (!draw) return;
+      color(150, 70, 0);
+      lineP(0, TR("     Alarme     ", "     Alarm      ", "     Alarma     ", "     Wecker     "));
+      lineP(1, PSTR("       OK       "));
+      return;
+    }
+  }
+  if (serviceAlarmExit(draw)) return;
   if (alarmSub == 0) {
-    if (e == EV_DOUBLE)     { cfg.armed = !cfg.armed; saveCfg(); }   // arm / disarm
-    else if (e == EV_SHORT) { alarmSub = 1; potReset(); }
-    else if (potLive())     { openMenu(); return; }
+    if (stickPush == SE_UP)        { cfg.armed = 1; potReset(); saveCfg(); alarmSub = 1; }   // Haut : activer puis entrer dans les réglages.
+    else if (stickPush == SE_DOWN) { cfg.armed = 0; potReset(); saveCfg(); alarmExitPending = true; alarmExitAt = millis() + 1500UL; } // Bas : désactiver puis quitter après confirmation.
   } else if (e == EV_SHORT) {
     stopAlarmPreview();
-    alarmSub++;
     potReset();
-    if (alarmSub == 6) { alarmSub = 0; saveCfg(); }
+    if (alarmSub == 4) { alarmSub = 5; saveCfg(1500UL); alarmSavedPending = true; alarmSavedReturnAt = millis() + 1500UL; }
+    else if (alarmSub == 5) alarmSub = 0;
+    else alarmSub++;
   }
 
+  if (serviceAlarmExit(draw)) return;
   if (alarmSub == 1 && potLive()) cfg.aH = potSelect(24, cfg.aH, 4);
   if (alarmSub == 2 && potLive()) cfg.aM = potSelect(60, cfg.aM, 4);
-  if (alarmSub == 3 && potLive()) cfg.armed = potSelect(2, cfg.armed, 20);
-  if (alarmSub == 4 && potLive()) alarmCfg.melody = potSelect(N_ALARM_TUNES, alarmCfg.melody, 15);
-  if (alarmSub == 5 && potLive()) alarmCfg.volume = potSelect(3, alarmCfg.volume, 20);
+  if (alarmSub == 3 && potLive()) alarmCfg.melody = potSelect(N_ALARM_TUNES, alarmCfg.melody, 15);
+  if (alarmSub == 4 && potLive()) alarmCfg.volume = potSelect(3, alarmCfg.volume, 20);
   updateAlarmPreview();
 
   if (!draw) return;
   char b[17];
   if (alarmSub == 0) {
     color(150, 70, 0);
-    snprintf_P(b, sizeof(b), TR("Alarme  %02d:%02d", "Alarm   %02d:%02d", "Alarma  %02d:%02d", "Wecker  %02d:%02d"), cfg.aH, cfg.aM);
-    line(0, b);
-    badges(M_ALARM);
-    if (snoozing) lineP(1, TR("Snooze en cours", "Snoozing", "Repitiendo", "Schlummern"));
-    else          lineP(1, cfg.armed ? TR("ON   OK=regler", "ON   OK=set", "ON   OK=ajustar", "AN   OK=stellen") : TR("OFF  OK=regler", "OFF  OK=set", "OFF  OK=ajustar", "AUS  OK=stellen"));
+    lineP(0, TR("HAUT: Activer", "UP: Enable alarm", "SUBIR: Activar", "HOCH: Aktivieren"));
+    lineP(1, TR("BAS: Desactiver", "DOWN: Disable", "BAJAR: Desact.", "RUNTER: Deaktiv."));
+    return;
+  }
+  if (alarmSub == 5) {
+    color(150, 70, 0);
+    lineP(0, TR("     Alarme     ", "     Alarm      ", "     Alarma     ", "     Wecker     "));
+    lineP(1, PSTR("       OK       "));
     return;
   }
   color(150, 100, 0);
   switch (alarmSub) {
     case 1:  lineP(0, TR("Alarme : heures", "Alarm: hours", "Alarma: horas", "Wecker: Stunden"));  snprintf_P(b, sizeof(b), PSTR("%02d h"), cfg.aH); break;
     case 2:  lineP(0, TR("Alarme : minutes", "Alarm: minutes", "Alarma: minutos", "Wecker: Minuten")); snprintf_P(b, sizeof(b), PSTR("%02d min"), cfg.aM); break;
-    case 4:  lineP(0, TR("Alarme: melodie", "Alarm: melody", "Alarma: melodia", "Wecker: Melodie")); strcpy_P(b, alarmTuneName()); break;
-    case 5:  lineP(0, TR("Alarme: volume", "Alarm: volume", "Alarma: volumen", "Wecker: Lautst."));
+    case 3:  lineP(0, TR("Alarme: melodie", "Alarm: melody", "Alarma: melodia", "Wecker: Melodie")); strcpy_P(b, alarmTuneName()); break;
+    default: lineP(0, TR("Alarme: volume", "Alarm: volume", "Alarma: volumen", "Wecker: Lautst."));
              strcpy_P(b, volumeName(alarmCfg.volume)); break;
-    default: lineP(0, TR("Alarme armee ?", "Alarm armed?", "Alarma activa?", "Wecker aktiv?")); strcpy_P(b, cfg.armed ? TR_PTR(TXT_OUI_22, PSTR("YES"), TXT_SI_25, TXT_JA_14) : TR_PTR(TXT_NON_19, TXT_NO_18, TXT_NO_18, TXT_NEIN_17)); break;
   }
   line(1, b);
 }
@@ -1271,7 +1441,7 @@ void drawPomo(uint8_t e, bool draw) {
   if (!draw) return;
   char b[17];
   unsigned long rs = (pomoRemMs + 999UL) / 1000UL;
-  if (pomoPhase == 0)      { color(220, 30, 0);  snprintf_P(b, sizeof(b), TR_PTR(PSTR("MINUTEUR #%d"), TXT_TIMER_d_30, PSTR("TEMPORIZ. #%d"), TXT_TIMER_d_30), pomoCount + 1); }
+  if (pomoPhase == 0)      { color(220, 30, 0);  strcpy_P(b, TR_PTR(PSTR("MINUTEUR"), PSTR("TIMER"), PSTR("TEMPORIZ."), PSTR("TIMER"))); }
   else if (pomoPhase == 1) { color(0, 170, 50);  snprintf_P(b, sizeof(b), TR("PAUSE COURTE", "SHORT BREAK", "PAUSA CORTA", "KURZE PAUSE")); }
   else                     { color(0, 80, 220);  snprintf_P(b, sizeof(b), TR("PAUSE LONGUE", "LONG BREAK", "PAUSA LARGA", "LANGE PAUSE")); }
   line(0, b);
@@ -1289,15 +1459,16 @@ void drawPomo(uint8_t e, bool draw) {
 }
 
 void drawChrono(uint8_t e, bool draw) {
-  bool idle = !chronoRun && chronoMs() == 0;       // stopwatch at zero, waiting for a short press
-  if (e == EV_DOUBLE && idle) { openMenu(); return; }   // already at zero: double click = back to the menu
-  if (e == EV_DOUBLE) { chronoRun = false; chronoAccum = 0; potReset(); }   // reset ; otherwise the stopwatch keeps running in the background
+  bool idle = !chronoRun && chronoMs() == 0;       // Chronomètre à zéro, en attente d’un appui court.
+  if (e == EV_DOUBLE && idle) { openMenu(); return; }   // Si déjà à zéro : double clic pour revenir au menu.
+  if (e == EV_DOUBLE) { chronoRun = false; chronoAccum = 0; potReset(); }   // Remise à zéro ; sinon le chronomètre continue en arrière-plan.
   else if (e == EV_SHORT) {
     if (chronoRun) { chronoAccum = millis() - chronoStart; chronoRun = false; }
     else           { chronoStart = millis() - chronoAccum; chronoRun = true; }
-    potReset();                                      // the dial only counts from now on
+    potReset();                                      // La molette est prise en compte à partir de cet instant.
   }
-  if (potLive()) { openMenu(); return; }            // turning the dial opens the menu (the stopwatch keeps running in the background)
+  if (stickPush == SE_UP || stickPush == SE_DOWN) { potReset(); } // Haut et bas ne déclenchent aucune action.
+  else if (potLive()) { openMenu(); return; }       // La molette ouvre le menu ; le chronomètre continue en arrière-plan.
 
   if (!draw) return;
   color(110, 40, 170);
@@ -1315,12 +1486,17 @@ void drawChrono(uint8_t e, bool draw) {
 }
 
 void drawTally(uint8_t e, bool draw, bool tap) {
+  if (e == EV_LONG && tallySub != 0) { tallySub = 0; potReset(); e = EV_NONE; }
   if (tallySub == 0) {
-    if (tap && tallyCount < 9999) { tallyCount++; lastDraw = 0; }   // each press counts immediately
-    if (potLive()) { tallySub = 1; tallyT0 = millis(); potReset(); }            // dial: reset request
+    (void)tap;
+    if (e == EV_SHORT && joystickClicked) tallyRun = !tallyRun;
+    else if (e == EV_SHORT && rightGesture) { tallySub = 1; tallyT0 = millis(); potReset(); }
+    if (tallyRun && stickPush == SE_UP && tallyCount < 9999) { tallyCount++; lastDraw = 0; }
+    else if (tallyRun && stickPush == SE_DOWN && tallyCount > 0) { tallyCount--; lastDraw = 0; }
+    if (potLive()) potReset();
   } else {
-    bool yes = NAV_VERTICAL ? (stickPush == SE_UP && millis() - tallyT0 > 600) : (e == EV_SHORT && millis() - tallyT0 > 600);
-    bool no = e == EV_DOUBLE || millis() - tallyT0 > 5000 || (NAV_VERTICAL && stickPush == SE_DOWN);
+    bool yes = NAV_VERTICAL ? (stickPush == SE_DOWN && millis() - tallyT0 > 600) : (e == EV_SHORT && millis() - tallyT0 > 600);
+    bool no = e == EV_DOUBLE || millis() - tallyT0 > 5000 || (NAV_VERTICAL && stickPush == SE_UP);
     if (no) { tallySub = 0; potReset(); }
     else if (yes) { tallyCount = 0; tallySub = 0; potReset(); }
   }
@@ -1329,28 +1505,20 @@ void drawTally(uint8_t e, bool draw, bool tap) {
   if (tallySub != 0) {
     color(150, 100, 0);
     lineP(0, TR("Remise a zero ?", "Reset counter?", "Poner a cero?", "Zuruecksetzen?"));
-    if (NAV_VERTICAL) lineP(1, TR("HAUT:OUI BAS:NON", "UP:YES  DOWN:NO", "ARR:SI  ABA:NO", "OBEN:JA UNT:NEIN"));
+    if (NAV_VERTICAL) lineP(1, TR("BAS:OUI HAUT:NON", "DOWN:YES UP:NO", "ABA:SI ARR:NO", "UNT:JA OBEN:NEIN"));
     else drawConfirmHint();
     return;
   }
   color(0, 130, 130);
-  lineP(0, TR("COMPTEUR", "COUNTER", "CONTADOR", "ZAEHLER"));
-  badges(M_TALLY);
-  snprintf_P(b, sizeof(b), PSTR("%16u"), tallyCount);
-  line(1, b);
-  // Active time at the bottom left; the counter stays in the four rightmost columns.
-  // When both run, alternate timer and stopwatch every two seconds.
-  if (pomoRun || chronoRun) {
-    bool timer = pomoRun && (!chronoRun || (millis() / 2000UL) % 2 == 0);
-    unsigned long secs = timer ? (pomoRemMs + 999UL) / 1000UL : chronoMs() / 1000UL;
-    char t[12];
-    if (secs >= 3600UL)
-      snprintf_P(t, sizeof(t), PSTR("%c%lu:%02lu:%02lu"), timer ? 'M' : 'C', secs / 3600UL, (secs / 60UL) % 60, secs % 60);
-    else
-      snprintf_P(t, sizeof(t), PSTR("%c%02lu:%02lu"), timer ? 'M' : 'C', secs / 60UL, secs % 60);
-    lcd.setCursor(0, 1);
-    lcd.print(t);
-  }
+  snprintf_P(b, sizeof(b), PSTR("COMPT  %s"), tallyRun ? "ACTIF" : "PAUSE");
+  line(0, b);
+  snprintf_P(b, sizeof(b), PSTR("%u"), tallyCount);
+  lineP(1, PSTR("                "));
+  uint8_t digits = 0; for (unsigned int n = tallyCount; n; n /= 10) digits++;
+  if (!digits) digits = 1;
+  lcd.setCursor(0, 1); lcd.write((uint8_t)2);
+  lcd.setCursor(1 + (14 - digits) / 2, 1); lcd.print(b);
+  lcd.setCursor(15, 1); lcd.write((uint8_t)1);
 }
 
 void drawDie(uint8_t e, bool draw, bool tap) {
@@ -1563,6 +1731,8 @@ void intro() {
 // ---------- Sleep (very long press) ----------
 void sleepNow() {
   stopAlarmPreview();
+  mode = M_SLEEP;
+  color(255, 0, 0);
   centeredP(0, TR("A bientot", "Goodbye", "Hasta pronto", "Tschuess"));
   centeredP(1, TXT_EMPTY_0);
   delay(700);
@@ -1630,6 +1800,7 @@ void loop() {
   pomoTick();
   checkAlarm();
   if (!standby && nightActive() != nightPrev) applyColor();      // automatic night mode starts or stops
+  updateValidationFlash();
 
   digitalWrite(PIN_LED, (standby || btnHeld >= LED_HOLD_MS) ? HIGH : LOW);   // LED on while asleep and during the very long press
 
@@ -1647,7 +1818,7 @@ void loop() {
   if (!ringing && !standby && cfg.sleep != 0 && !(mode == M_CHESS && chessState == 1) &&
       now - lastActivity >= (unsigned long)pgm_read_byte(&SLEEP_MIN[cfg.sleep]) * 60000UL) { sleepNow(); e = EV_NONE; }   // auto sleep
   if (standby && !ringing) return;                    // screen off: only the alarm and the background functions keep running
-  if (!ringing && e == EV_LONG) { backToMenu(); e = EV_NONE; }
+  if (!ringing && e == EV_LONG && !(mode == M_TH && thSub != 0) && !(mode == M_ALARM && alarmSub != 0) && mode != M_SETCLOCK && !(mode == M_TALLY && tallySub != 0)) { backToMenu(); e = EV_NONE; }
 
   unsigned long period = (mode == M_CHRONO || mode == M_TALLY || mode == M_DIE || mode == M_CHESS) ? 100UL : 200UL;
   bool draw = (now - lastDraw >= period) || (e != EV_NONE) || stickAct;
