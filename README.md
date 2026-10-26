@@ -17,18 +17,18 @@ A compact desk console built around an **Arduino UNO R3**, a **Grove Base Shield
 - Dice: D2 (coin flip) up to D100.
 - Chess clock with several time controls and increment.
 - Settings: brightness, volume, boot sound, automatic sleep, night mode, set time, favorite page.
-- With the RTC module: clock on the home screen, alarm, automatic night mode (22:00 to 06:00, dimmed screen and silent alerts).
+- The required RTC module provides the clock, alarm and automatic night mode (22:00 to 06:00, dimmed screen and silent alerts).
 - Two firmware builds: English and French.
 
 ## One joystick, five gestures
 
 | Gesture | Effect |
 |---|---|
-| Up / down | Scroll the menu or change a value (hold to repeat, faster after 1.5 s) |
-| Right, or click on the stick | OK. Twice in less than 0.4 s: page action |
-| Left | Back |
-| Left held 2.5 s | Screen sleep |
-| Chess clock running | Any move switches player |
+| Up / down | Scroll the menu or change a value. Hold to repeat; it speeds up after 1.5 s. |
+| Right or click the joystick | Confirm or continue. |
+| Double click | Repeat the right gesture or click twice within 0.4 s for the current page's action. |
+| Left | Go back. Hold left for 2.5 s to put the screen to sleep. |
+| Chess clock running | Any joystick movement switches players; click the joystick to pause. |
 
 Do not touch the joystick while the board powers up: its centre is measured at that moment.
 
@@ -39,7 +39,7 @@ Do not touch the joystick while the board powers up: its centre is measured at t
 | Arduino UNO R3 + Grove Base Shield | USB-B for power and programming |
 | Grove LCD RGB Backlight V4.0 (16x2) | I2C |
 | Grove SHT31 or SHT40 temperature and humidity sensor (0x44) | I2C |
-| Grove RTC, DS1307 or DS3231 (0x68) | I2C |
+| Required Grove RTC module (DS1307 or DS3231, 0x68) | I2C |
 | Grove Thumb Joystick | A1 (X) and A2 (Y) |
 | Grove Buzzer | D3 |
 
