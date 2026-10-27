@@ -13,10 +13,11 @@ A compact desk console built around an **Arduino UNO R3**, a **Grove Base Shield
 ## What it does
 
 - Temperature and humidity on a 16x2 RGB LCD. The sensor can be a Grove **SHT31 or SHT40**: the firmware detects it automatically. Adjustable thresholds: the screen turns red, blue or green and the buzzer warns you.
-- Menu of 10 entries: Temp & Hum, Timer (Pomodoro), Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings and Screen sleep. The startup favorite is selected in Settings; it is not a menu entry.
+- Temp & Hum has 5 pages: readings, minimum, maximum, average and AUT, which cycles through the first four pages every 3 seconds.
+- Menu of 10 entries: Temp & Hum, Timer (Pomodoro), Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings and Screen sleep. The favorite is selected in Settings, is not a menu entry, and the console starts on the menu by default.
 - Dice: D2 (coin flip) up to D100.
-- Chess clock with several time controls and increment.
-- Settings: brightness, volume, boot sound, automatic sleep, night mode, set time, favorite page.
+- Chess clock time controls: 1+0, 3+0, 3+2, 5+0, 5+3, 10+0, 10+5, 15+10, 20+0, 30+0 and 60+0.
+- Settings (8): brightness, volume, startup sound, automatic sleep, night mode, set time, favorite page and factory reset.
 - The required RTC module provides the clock, alarm and automatic night mode (22:00 to 06:00, dimmed screen and silent alerts).
 - Two firmware builds: English and French.
 
@@ -28,6 +29,9 @@ A compact desk console built around an **Arduino UNO R3**, a **Grove Base Shield
 | Right or click the joystick | Confirm or continue. |
 | Double click | Repeat the right gesture or click twice within 0.4 s for the current page's action. |
 | Left | Go back. Hold left for 2.5 s to put the screen to sleep. |
+| Temp & Hum thresholds | Push right to adjust and confirm the thresholds. |
+| Counter | Up = +1, down = -1, click the joystick head = pause. |
+| Alarm | Up = enable, down = disable. |
 | Chess clock running | Any joystick movement switches players; click the joystick to pause. |
 
 Do not touch the joystick while the board powers up: its centre is measured at that moment.
@@ -53,7 +57,7 @@ Screws: 13 x M1.7x5 (all the Grove modules), 4 x M2x20 (cover and tray), 4 x M3x
 2. Open `Desk_Watch_JOY_STUDENT_Edition_EN/Desk_Watch_JOY_STUDENT_Edition_EN.ino` (or the `_FR` sketch for the French build). Each sketch sits in the folder of the same name, as the Arduino IDE requires.
 3. Select *Arduino Uno* and upload.
 
-The sketch uses about 78 % of the UNO flash and is commented, so you can read it and change it.
+The sketch uses about 87 % of the UNO flash and is commented, so you can read it and change it.
 
 ## Photos
 

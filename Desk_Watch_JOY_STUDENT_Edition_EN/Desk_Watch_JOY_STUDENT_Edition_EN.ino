@@ -17,8 +17,9 @@
 //   With NAV_VERTICAL = false: LEFT / RIGHT change values, UP = OK, DOWN = back (DOWN held = sleep).
 //   Joystick orientation: SWAP_XY, INV_X, INV_Y, INV_DIAL (top of the joystick block).
 //
-// ---- Menu (11 entries) ----
-//   Favorite, Temp & Hum, Timer, Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings, Sleep mode.
+// ---- Menu (10 entries) ----
+//   Temp & Hum, Timer, Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings, Sleep mode.
+//   The favorite is not a menu entry: it is chosen in Settings (Menu by default, Temp and Hum, Timer, Stopwatch, Counter, Dice, Chess clock) and sets the page shown at start-up.
 //   Settings (8): brightness, volume, startup sound, auto sleep, night mode, set time, favorite, factory reset.
 //   The startup sound is off by default (change it in Settings). Settings are saved in EEPROM.
 //
@@ -26,18 +27,18 @@
 //   Temp & Hum  : line 1 = RTC time and background-function indicators; line 2 = temperature, humidity and OK.
 //                 On alert, line 2 alternates every 2 s: readings / temperature alert / readings / humidity alert.
 //                 The backlight colours the screen: too high = red, too low = blue, OK = green.
-//                 Double click = set the four thresholds (low and high temperature, low and high humidity); OK = next, then confirm.
+//                 RIGHT (one push) = set the four thresholds (Tmin, Tmax, Hmin, Hmax); UP / DOWN = value, OK = next threshold, then RIGHT to save; LEFT = previous threshold. A click or double click opens the menu.
 //                 Thresholds are saved and reused at start-up.
 //                 UP / DOWN changes page (up / down arrows shown left of the clock): 1 readings, 2 minimum, 3 maximum, 4 average, 5 "AUT" (alternating with the arrows) which cycles through the four pages every 3 s.
 //   Timer (Pomodoro) : OK = start or pause; double click = reset (then back to the menu if already at zero).
 //                 When stopped, UP / DOWN sets the work time (1 to 60 min, then 65 min to 4 h in steps of 5). 5 min breaks, 15 min long break every 4th session.
-//   Counter     : OK adds 1; an UP / DOWN movement asks to reset (UP = yes, DOWN = no, LEFT = back, no answer for 5 s = no).
+//   Counter     : UP = +1 and DOWN = -1 (when ACTIVE); click on the head = ACTIVE / PAUSE; RIGHT = reset (DOWN = yes, UP = no, LEFT or double click = no, no answer for 5 s = no).
 //   Stopwatch   : OK = start or stop; double click = reset; if already at zero, double click or LEFT = menu.
-//   Alarm       : OK = set hour, minutes, activation, ringtone and volume; double click = enable or disable. Eight ringtones, with preview.
-//                 While ringing: OK or double click = snooze 5 min; LEFT = stop. The ring lasts 120 s at most.
+//   Alarm       : UP = enable and set (hours, minutes, ringtone, volume; OK = next step, LEFT = previous step), DOWN = disable. Eight ringtones, with preview.
+//                 While ringing: any touch (direction or click) stops it for the day and opens the menu. No reaction: stops after 120 s, rings again 5 min later, until touched.
 //   Dice        : OK = roll (rattle for 1 s, then result); UP / DOWN = number of sides (2, 4, 6, 8, 10, 12, 20, 30, 100); double click = menu.
-//   Chess clock : UP / DOWN = time control when stopped; OK = start. While running, any movement hands over to the other player;
-//                 joystick held 1.2 s or click = pause; then LEFT = menu, click or RIGHT x2 = reset.
+//   Chess clock : UP / DOWN = time control when stopped (1+0, 3+0, 3+2, 5+0, 5+3, 10+0, 10+5, 15+10, 20+0, 30+0, 60+0); OK = start. While running, any movement hands over to the other player;
+//                 joystick held 1.2 s or click = pause; then OK = resume, double click = reset, LEFT = menu.
 //   Melody      : UP / DOWN = choose; OK = play, pause or resume; double click = menu.
 //   Night mode  : No / Auto (10 pm to 6 am, with RTC) / Yes: brightness reduced to 8 %, alert beeps and startup melody muted; the alarm still rings.
 //   Auto sleep  : never, 1, 2, 5, 10, 15, 30 min or 1 h without activity; disabled while a chess game is running.
@@ -172,9 +173,9 @@ uint8_t dieIdx = 2, dieVal = 0, dieShow = 0;   // chosen sides (D6 at start), la
 bool dieRolling = false;
 unsigned long dieEnd = 0;
 // chess clock: time controls (minutes, increment in seconds)
-const uint8_t N_CHESS = 10;
-static const uint8_t CHESS_MIN[N_CHESS] PROGMEM = { 1, 3, 3, 5, 5, 10, 10, 15, 30, 60 };
-static const uint8_t CHESS_INC[N_CHESS] PROGMEM = { 0, 0, 2, 0, 3, 0, 5, 10, 0, 0 };
+const uint8_t N_CHESS = 11;
+static const uint8_t CHESS_MIN[N_CHESS] PROGMEM = { 1, 3, 3, 5, 5, 10, 10, 15, 20, 30, 60 };
+static const uint8_t CHESS_INC[N_CHESS] PROGMEM = { 0, 0, 2, 0, 3, 0, 5, 10, 0, 0, 0 };
 uint8_t chessIdx = 4;                 // 5+3 at start
 uint8_t chessState = 0;               // 0 waiting, 1 running, 2 paused, 3 time out
 uint8_t chessSide = 0;                // player whose clock is running (0 or 1)
@@ -1537,7 +1538,7 @@ void drawTally(uint8_t e, bool draw, bool tap) {
     return;
   }
   color(0, 130, 130);
-  snprintf_P(b, sizeof(b), PSTR("COMPT  %s"), tallyRun ? "ACTIF" : "PAUSE");
+  snprintf_P(b, sizeof(b), PSTR("COUNT  %s"), tallyRun ? "ACTIVE" : "PAUSE");
   line(0, b);
   snprintf_P(b, sizeof(b), PSTR("%u"), tallyCount);
   lineP(1, PSTR("                "));

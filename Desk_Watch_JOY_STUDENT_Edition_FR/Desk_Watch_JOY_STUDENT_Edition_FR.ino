@@ -17,8 +17,9 @@
 //   Avec NAV_VERTICAL = false : GAUCHE / DROITE changent les valeurs, HAUT = OK, BAS = retour (BAS maintenu = veille).
 //   Orientation du joystick : SWAP_XY, INV_X, INV_Y, INV_DIAL (début du bloc joystick).
 //
-// ---- Menu (11 entrées) ----
-//   Favori, Temp et Hum, Minuteur, Compteur, Chrono, Réveil, Dé, Pendule d'échecs, Mélodie, Paramètres, Mode veille.
+// ---- Menu (10 entrées) ----
+//   Temp et Hum, Minuteur, Compteur, Chrono, Réveil, Dé, Pendule d'échecs, Mélodie, Paramètres, Mode veille.
+//   Le favori n'est pas une entrée du menu : il se choisit dans Paramètres (Menu par défaut, Temp et Hum, Minuteur, Chrono, Compteur, Dé, Pendule d'échecs) et fixe la page affichée au démarrage.
 //   Paramètres (8) : luminosité, volume, son de démarrage, veille automatique, mode nuit, réglage de l'heure, favori, réglage usine.
 //   Le son de démarrage est désactivé par défaut (réglable dans Paramètres). Les réglages sont enregistrés en EEPROM.
 //
@@ -26,18 +27,18 @@
 //   Temp et Hum : ligne 1 = heure RTC et indicateurs des fonctions en arrière-plan ; ligne 2 = température, humidité et OK.
 //                 En alerte, la ligne 2 alterne toutes les 2 s : mesures / alerte température / mesures / alerte humidité.
 //                 Le rétroéclairage colore l'écran : trop haut = rouge, trop bas = bleu, OK = vert.
-//                 Double clic = régler les quatre seuils (température basse et haute, humidité basse et haute) ; OK = suivant puis valider.
+//                 DROITE (une poussée) = régler les quatre seuils (Tmin, Tmax, Hmin, Hmax) ; HAUT / BAS = valeur, OK = seuil suivant, puis DROITE pour enregistrer ; GAUCHE = seuil précédent. Un clic ou un double clic ouvre le menu.
 //                 Les seuils sont enregistrés et réutilisés au démarrage.
 //                 HAUT / BAS change de page (flèches haut / bas affichées à gauche de l'horloge) : 1 mesures, 2 minimum, 3 maximum, 4 moyenne, 5 « AUT » (en alternance avec les flèches) qui fait défiler les quatre pages toutes les 3 s.
 //   Minuteur (Pomodoro) : OK = démarrer ou pause ; double clic = remise à zéro (puis retour au menu si déjà à zéro).
 //                 À l'arrêt, HAUT / BAS règle la durée de travail (1 à 60 min, puis 65 min à 4 h par pas de 5). Pauses de 5 min, longue pause de 15 min toutes les 4 séances.
-//   Compteur    : OK ajoute 1 ; un mouvement HAUT / BAS demande la remise à zéro (HAUT = oui, BAS = non, GAUCHE = retour, 5 s sans réponse = non).
+//   Compteur    : HAUT = +1 et BAS = -1 (en mode ACTIF) ; clic sur la tête = ACTIF / PAUSE ; DROITE = remise à zéro (BAS = oui, HAUT = non, GAUCHE ou double clic = non, 5 s sans réponse = non).
 //   Chrono      : OK = démarrer ou arrêter ; double clic = remise à zéro ; si déjà à zéro, double clic ou GAUCHE = menu.
-//   Réveil      : OK = régler heure, minutes, activation, sonnerie et volume ; double clic = activer ou désactiver. Huit sonneries, avec préécoute.
-//                 Pendant la sonnerie : OK ou double clic = reporter de 5 min ; GAUCHE = arrêter. Sonnerie au maximum 120 s.
+//   Réveil      : HAUT = activer et régler (heures, minutes, mélodie, volume ; OK = étape suivante, GAUCHE = étape précédente), BAS = désactiver. Huit sonneries, avec préécoute.
+//                 Pendant la sonnerie : tout contact (direction ou clic) l'arrête pour la journée et ouvre le menu. Sans réaction : arrêt après 120 s, reprise 5 min plus tard, jusqu'à un contact.
 //   Dé          : OK = lancer (cliquetis 1 s, puis résultat) ; HAUT / BAS = nombre de faces (2, 4, 6, 8, 10, 12, 20, 30, 100) ; double clic = menu.
-//   Pendule d'échecs : HAUT / BAS = cadence à l'arrêt ; OK = démarrer. En partie, n'importe quel mouvement passe à l'autre joueur ;
-//                 joystick maintenu 1,2 s ou clic = pause ; ensuite GAUCHE = menu, clic ou DROITE x2 = remise à zéro.
+//   Pendule d'échecs : HAUT / BAS = cadence à l'arrêt (1+0, 3+0, 3+2, 5+0, 5+3, 10+0, 10+5, 15+10, 20+0, 30+0, 60+0) ; OK = démarrer. En partie, n'importe quel mouvement passe à l'autre joueur ;
+//                 joystick maintenu 1,2 s ou clic = pause ; ensuite OK = reprendre, double clic = remise à zéro, GAUCHE = menu.
 //   Mélodie     : HAUT / BAS = choisir ; OK = lire, pause ou reprise ; double clic = menu.
 //   Mode nuit   : Non / Auto (22 h à 6 h, avec RTC) / Oui : luminosité réduite à 8 %, bips d'alerte et mélodie de démarrage coupés ; le réveil sonne normalement.
 //   Veille automatique : jamais, 1, 2, 5, 10, 15, 30 min ou 1 h sans activité ; désactivée pendant une partie d'échecs en cours.
@@ -172,9 +173,9 @@ uint8_t dieIdx = 2, dieVal = 0, dieShow = 0;   // Indice du dé choisi (D6 au d�
 bool dieRolling = false;
 unsigned long dieEnd = 0;
 // Cadences d’échecs : durée en minutes et incrément en secondes.
-const uint8_t N_CHESS = 10;
-static const uint8_t CHESS_MIN[N_CHESS] PROGMEM = { 1, 3, 3, 5, 5, 10, 10, 15, 30, 60 };
-static const uint8_t CHESS_INC[N_CHESS] PROGMEM = { 0, 0, 2, 0, 3, 0, 5, 10, 0, 0 };
+const uint8_t N_CHESS = 11;
+static const uint8_t CHESS_MIN[N_CHESS] PROGMEM = { 1, 3, 3, 5, 5, 10, 10, 15, 20, 30, 60 };
+static const uint8_t CHESS_INC[N_CHESS] PROGMEM = { 0, 0, 2, 0, 3, 0, 5, 10, 0, 0, 0 };
 uint8_t chessIdx = 4;                 // Cadence initiale : 5 min + 3 s par coup.
 uint8_t chessState = 0;               // 0 = attente, 1 = partie en cours, 2 = pause, 3 = temps écoulé.
 uint8_t chessSide = 0;                // Joueur dont le temps s’écoule : 0 ou 1.
