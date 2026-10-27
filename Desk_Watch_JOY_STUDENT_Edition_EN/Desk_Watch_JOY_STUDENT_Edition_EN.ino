@@ -397,6 +397,7 @@ void color(uint8_t r, uint8_t g, uint8_t b) {
       (r == 0 && g == 140 && b == 170) ||
       (r == 60 && g == 60 && (b == 60 || b == 120));
   if (mode == M_TH && r == 0 && g == 160 && b == 40) statusColor = false;
+  if (mode == M_POMO && (r | g | b)) statusColor = true;   // Timer: own colour for each state, see drawPomo.
   if (!statusColor) {
     switch (mode) {
     case M_TH: r=0; g=145; b=145; break;
@@ -469,7 +470,7 @@ void musicToneStop() {
 }
 
 void musicToneStartAtVolume(unsigned int freq, uint8_t volume) {
-  static const uint8_t DUTY[3] = { 5, 20, 50 };
+  static const uint8_t DUTY[3] = { 5, 15, 25 };
   unsigned long count = F_CPU / (256UL * freq);
   if (count < 1) count = 1;
   if (count > 256) count = 256;
@@ -514,8 +515,8 @@ void alarmMelodyTick(unsigned long now, uint8_t volume) {
 }
 
 void updateAlarmPreview() {
-  if (alarmSub != 4 && alarmSub != 5) { stopAlarmPreview(); return; }
-  uint8_t volume = alarmSub == 4 ? 0 : alarmCfg.volume;
+  if (alarmSub != 3 && alarmSub != 4) { stopAlarmPreview(); return; }
+  uint8_t volume = alarmSub == 3 ? 0 : alarmCfg.volume;
   if (!alarmPreview || previewMelody != alarmCfg.melody || previewVolume != volume) {
     musicToneStop();
     alarmPos = 0; alarmNoteEnd = millis();
@@ -529,7 +530,7 @@ void updateAlarmPreview() {
 // (5 %, 20 % or 50 %: the shorter it is, the quieter the piezo buzzer). Blocking for 'ms'.
 void buzz(unsigned int freq, unsigned int ms) {
   if (alarmPreview) musicToneStop();   // let notification beeps temporarily take over the pin
-  static const uint8_t DUTY[3] = { 5, 20, 50 };
+  static const uint8_t DUTY[3] = { 5, 15, 25 };
   unsigned long period = 1000000UL / freq;
   unsigned long high = period * DUTY[cfg.volume] / 100;
   unsigned long end = millis() + ms;
@@ -694,7 +695,7 @@ void loadCfg() {
   if (cfg.magic != 0xAC || cfg.aH > 23 || cfg.aM > 59 || cfg.armed > 1 ||
       cfg.workMin < 1 || cfg.workMin > 240) {
     cfg.magic = 0xAC; cfg.aH = 7; cfg.aM = 0; cfg.armed = 0; cfg.workMin = 25;
-    cfg.bright = 30; cfg.sound = 0; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0; cfg.tLo2 = 0xFF;       // thresholds are re-checked below
+    cfg.bright = 85; cfg.sound = 0; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0; cfg.tLo2 = 0xFF;       // thresholds are re-checked below
   }
   if (cfg.sleep > 7) cfg.sleep = 0;                     // auto sleep: off by default
   if (cfg.night > 2) cfg.night = 1;                     // night mode: automatic by default
@@ -707,7 +708,7 @@ void loadCfg() {
     cfg.tLo2 = T_LO_DEFAULT2; cfg.tHi2 = T_HI_DEFAULT2;
     cfg.hLo = H_LO_DEFAULT;   cfg.hHi = H_HI_DEFAULT;
   }
-  if (cfg.bright < 1 || cfg.bright > 100) cfg.bright = 30;   // old save or invalid value
+  if (cfg.bright < 1 || cfg.bright > 100) cfg.bright = 85;   // old save or invalid value
   EEPROM.get(sizeof(cfg), alarmCfg);
   if (alarmCfg.magic != 0xB1 || alarmCfg.melody >= N_ALARM_TUNES || alarmCfg.volume > 2) {
     alarmCfg.magic = 0xB1; alarmCfg.melody = 0; alarmCfg.volume = cfg.volume;
@@ -1011,6 +1012,15 @@ void badges(uint8_t self) {
 // ---------- Pages ----------
 uint8_t menuMode(uint8_t i);
 void sleepNow();
+// Timer colours: ready = blue, work = orange, timer paused = yellow, short break = green, long break = cyan.
+void pomoColor() {
+  if (pomoIdle()) color(40, 90, 160);
+  else if (!pomoRun) color(200, 150, 0);
+  else if (pomoPhase == 0) color(255, 70, 0);
+  else if (pomoPhase == 1) color(0, 170, 50);
+  else color(0, 170, 200);
+}
+
 void drawMenu(uint8_t e, bool draw) {
   static const char names[] PROGMEM =
   "Time Temp Hum\0"
@@ -1031,7 +1041,7 @@ void drawMenu(uint8_t e, bool draw) {
   char b[17];
   uint8_t displayMode = mode;
   mode = menuIdx == N_MENU - 1 ? M_SLEEP : menuMode(menuIdx);
-  color(0, 0, 0);
+  if (mode == M_POMO) pomoColor(); else color(0, 0, 0);   // Same colour in the menu and in the page.
   mode = displayMode;
   snprintf_P(b, sizeof(b), PSTR("MENU       %2d/%d"), menuIdx + 1, N_MENU);
   line(0, b);
@@ -1117,7 +1127,7 @@ void drawParams(uint8_t e, bool draw) {
     if (e == EV_SHORT) {
       if (parIdx == 8) {
         cfg.magic = 0xAC; cfg.aH = 7; cfg.aM = 0; cfg.armed = 0; cfg.workMin = 25;
-        cfg.bright = 30; cfg.sound = 0; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0;
+        cfg.bright = 85; cfg.sound = 0; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0;
         cfg.tLo2 = T_LO_DEFAULT2; cfg.tHi2 = T_HI_DEFAULT2; cfg.hLo = H_LO_DEFAULT; cfg.hHi = H_HI_DEFAULT;
         alarmCfg.magic = 0xB1; alarmCfg.melody = 0; alarmCfg.volume = 1;
         EEPROM.put(0, cfg); EEPROM.put(sizeof(cfg), alarmCfg);
@@ -1469,9 +1479,10 @@ void drawPomo(uint8_t e, bool draw) {
   if (!draw) return;
   char b[17];
   unsigned long rs = (pomoRemMs + 999UL) / 1000UL;
-  if (pomoPhase == 0)      { color(220, 30, 0);  strcpy_P(b, TR_PTR(PSTR("MINUTEUR"), PSTR("TIMER"), PSTR("TEMPORIZ."), PSTR("TIMER"))); }
-  else if (pomoPhase == 1) { color(0, 170, 50);  snprintf_P(b, sizeof(b), TR("PAUSE COURTE", "SHORT BREAK", "PAUSA CORTA", "KURZE PAUSE")); }
-  else                     { color(0, 80, 220);  snprintf_P(b, sizeof(b), TR("PAUSE LONGUE", "LONG BREAK", "PAUSA LARGA", "LANGE PAUSE")); }
+  if (pomoPhase == 0)      { strcpy_P(b, TR_PTR(PSTR("MINUTEUR"), PSTR("TIMER"), PSTR("TEMPORIZ."), PSTR("TIMER"))); }
+  else if (pomoPhase == 1) { snprintf_P(b, sizeof(b), TR("PAUSE COURTE", "SHORT BREAK", "PAUSA CORTA", "KURZE PAUSE")); }
+  else                     { snprintf_P(b, sizeof(b), TR("PAUSE LONGUE", "LONG BREAK", "PAUSA LARGA", "LANGE PAUSE")); }
+  pomoColor();
   line(0, b);
   badges(M_POMO);
   char t[12], d[12];

@@ -1,85 +1,51 @@
-# Desk Watch JOY STUDENT
+# Desk Watch : JOY STUDENT EDITION - firmware (mis à jour le 27/10/2026)
 
-A compact desk console built around an **Arduino UNO R3**, a **Grove Base Shield** and one small **thumb joystick**. It shows temperature and humidity, warns you when the room goes out of range, and runs a Pomodoro timer, a stopwatch, a counter, a dice roller, a two-player chess clock and a melody player. Every module plugs in with a standard Grove cable, no soldering. Made for students, to build and use at home or in class.
+Deux sketchs, un par langue : `Desk_Watch_JOY_STUDENT_Edition_FR` et `Desk_Watch_JOY_STUDENT_Edition_EN` (le dossier porte le nom du sketch, comme l'exige l'IDE Arduino).
 
-![Desk Watch JOY STUDENT](docs/photos/joy_student_banner.jpg)
+Dérivé de `TEACHER_BMP280_JOY` (22/10/2026), sans le baromètre et sans le mode examen. Tout le reste est identique : joystick, pages et réglages.
 
-![Desk Watch JOY STUDENT](docs/photos/joy_student_cover.jpg)
+## Matériel
+Arduino UNO + Grove Base Shield, écran Grove LCD RGB V4.0, SHT31 ou SHT40 (détection automatique, voir ci-dessous), buzzer D3, Grove Thumb Joystick (X sur A1, Y sur A2), RTC DS1307 ou DS3231 obligatoire (I2C 0x68) : il fournit l'heure, le réveil et le mode nuit automatique. Bibliothèque nécessaire : « Grove - LCD RGB Backlight ». Ne pas toucher le joystick à la mise sous tension (le centre est mesuré à ce moment).
 
-![Wiring diagram](docs/wiring_EN.png)
+## Pages
+Temp et Hum, Minuteur (Pomodoro), Compteur, Chrono, Réveil, Dé, Pendule d'échecs, Mélodie, Paramètres, Mode veille (10 entrées). Le favori n'est pas une entrée du menu : il se choisit dans Paramètres. Écran de démarrage : « JOY STUDENT ».
 
-*Version française : le schéma est dans `docs/wiring_FR.png`, les guides en français sont dans `docs/` et le firmware en français est dans `Desk_Watch_JOY_STUDENT_Edition_FR/`.*
+Temp et Hum (5 pages, haut / bas pour changer, flèches affichées à gauche de l'horloge) : 1 mesures, 2 minimum, 3 maximum, 4 moyenne (sur les 30 dernières mesures), 5 « AUT » qui fait défiler les pages 1 à 4 toutes les 3 s. L'heure occupe les colonnes 4 à 11.
 
-## What it does
+Dé : la ligne 1 rappelle les gestes (↑↓ faces, OK=relance) et la ligne 2 affiche D + faces à gauche, texte ou résultat entre crochets à droite.
 
-- Temperature and humidity on a 16x2 RGB LCD. The sensor can be a Grove **SHT31 or SHT40**: the firmware detects it automatically. Adjustable thresholds: the screen turns red, blue or green and the buzzer warns you.
-- Temp & Hum has 5 pages: readings, minimum, maximum, average and AUT, which cycles through the first four pages every 3 seconds.
-- Menu of 10 entries: Temp & Hum, Timer (Pomodoro), Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings and Screen sleep. The favorite is selected in Settings, is not a menu entry, and the console starts on the menu by default.
-- Dice: D2 (coin flip) up to D100.
-- Chess clock time controls: 1+0, 3+0, 3+2, 5+0, 5+3, 10+0, 10+5, 15+10, 20+0, 30+0 and 60+0.
-- Settings (8): brightness, volume, startup sound, automatic sleep, night mode, set time, favorite page and factory reset.
-- The required RTC module provides the clock, alarm and automatic night mode (22:00 to 06:00, dimmed screen and silent alerts).
-- Two firmware builds: English and French.
+Paramètres (8) : luminosité, volume, son de démarrage, veille automatique, mode nuit, régler l'heure, favori, réglage usine. Le son de démarrage est désactivé par défaut (carte neuve ou après un réglage usine ; une carte déjà configurée garde son réglage).
 
-## One joystick, five gestures
-
-| Gesture | Effect |
+## Gestes (réglage par défaut, logique verticale)
+| Geste | Effet |
 |---|---|
-| Up / down | Scroll the menu or change a value. Hold to repeat; it speeds up after 1.5 s. |
-| Right or click the joystick | Confirm or continue. |
-| Double click | Repeat the right gesture or click twice within 0.4 s for the current page's action. |
-| Left | Go back. Hold left for 2.5 s to put the screen to sleep. |
-| Temp & Hum thresholds | Push right to adjust and confirm the thresholds. |
-| Counter | Up = +1, down = -1, click the joystick head = pause. |
-| Alarm | Up = enable, down = disable. |
-| Chess clock running | Any joystick movement switches players; click the joystick to pause. |
+| Bas / haut | Défiler le menu, changer une valeur (maintenu : répétition, plus rapide après 1,5 s) |
+| Droite, ou clic sur la tête | OK |
+| Droite (ou clic) deux fois en moins de 0,4 s | Double clic |
+| Gauche | Retour (menu, annuler) |
+| Gauche maintenu 2,5 s | Veille |
+| Pendule d'échecs en cours : n'importe quel mouvement | Changement de joueur ; maintien 1,2 s = pause ; clic = pause |
 
-Do not touch the joystick while the board powers up: its centre is measured at that moment.
+Réglages au début du bloc joystick : `NAV_VERTICAL`, `INV_DIAL`, `SWAP_XY`, `INV_X`, `INV_Y` (orientation confirmée pour la carte montée dans le plateau JOY, le 22/10).
 
-## Hardware
+## Retiré par rapport à TEACHER_BMP280_JOY
+- BMP280 : pression, altitude et QNH, tendance sur 3 h (adresses I2C 0x76 / 0x77 plus utilisées ; la zone EEPROM du QNH n'est plus lue).
+- Mode examen (entrée de menu, réglage, compte des copies).
+- L'entrée de menu « Temp et Hum » reprend son nom d'origine (c'était « Meteo » avec le baromètre).
 
-| Part | Connection |
-|---|---|
-| Arduino UNO R3 + Grove Base Shield | USB-B for power and programming |
-| Grove LCD RGB Backlight V4.0 (16x2) | I2C |
-| Grove SHT31 or SHT40 temperature and humidity sensor (0x44) | I2C |
-| Required Grove RTC module (DS1307 or DS3231, 0x68) | I2C |
-| Grove Thumb Joystick | A1 (X) and A2 (Y) |
-| Grove Buzzer | D3 |
+## Taille (IDE Arduino 2.3.10, Arduino UNO, compilation du 27/10/2026)
+FR : 28 266 octets de programme (87 % de 32 256) et 694 octets de RAM globale (33 % de 2 048). EN : 28 180 octets (87 %) et 694 octets de RAM (33 %). Il reste environ 4 000 octets de programme ; les chiffres du 22/10 (25 154 octets) ne sont plus valables.
 
-The LCD, the sensor and the RTC share the same I2C bus (different addresses), so the order of the I2C ports does not matter. The RTC gives the time, the alarm and the automatic night mode.
+## Vérifié sur la carte
+- 25/10/2026 : une première console a été imprimée, montée et testée sur une vraie carte avec le firmware de l'époque : tout a fonctionné comme prévu.
+- 27/10/2026 : la version actuelle (commentaires mis à jour, son de démarrage désactivé par défaut) est compilée et téléversée sur la carte FR. Aucun autre changement de logique n'a été fait ; un essai complet reste à refaire.
 
-Screws: 13 x M1.7x5 (all the Grove modules), 4 x M2x20 (cover and tray), 4 x M3x6 (UNO), 4 x M3x12 countersunk (base to shell).
+## Vérifié sur PC
+- Compilation FR et EN.
+- Le code ne diffère de TEACHER_BMP280_JOY que par des suppressions (blocs BMP280 et examen), quelques textes (titre, menu, écran de démarrage, commentaires) et la lecture du capteur (SHT31 ou SHT40).
+- Détection SHT31 / SHT40 : fonction de lecture extraite et essayée sur PC avec un faux bus I2C : SHT31 (25,0 °C, 50 % lus correctement), SHT40 (idem), capteur absent, capteur débranché puis remplacé par l'autre type, lectures à CRC faux (valeurs conservées deux fois, panne à la troisième), bornes d'humidité 0 et 100 %.
 
-## Software
-
-1. Install the **"Grove - LCD RGB Backlight"** library in the Arduino IDE (Library Manager). No other library is needed: the sensor and the RTC are read directly over I2C.
-2. Open `Desk_Watch_JOY_STUDENT_Edition_EN/Desk_Watch_JOY_STUDENT_Edition_EN.ino` (or the `_FR` sketch for the French build). Each sketch sits in the folder of the same name, as the Arduino IDE requires.
-3. Select *Arduino Uno* and upload.
-
-The sketch uses about 87 % of the UNO flash and is commented, so you can read it and change it.
-
-## Photos
-
-![The four printed parts and the UNO](docs/photos/joy_student_parts.jpg)
-
-## Documentation
-
-- Assembly guide: [English](docs/EN_Desk_Watch_JOY_STUDENT_Assembly_Guide.pdf) | [Français](docs/FR_Desk_Watch_JOY_STUDENT_Guide_de_montage.pdf)
-- User guide: [English](docs/EN_Desk_Watch_JOY_STUDENT_User_Guide.pdf) | [Français](docs/FR_Desk_Watch_JOY_STUDENT_Mode_d_emploi.pdf)
-
-## 3D-printed case
-
-The case (base, shell, tray and screw-on cover) is designed for a Bambu Lab printer and printed in PLA, one colour per part if you like. The 3D files and print profiles are only on MakerWorld:
-
-https://makerworld.com/models/3490181
-
-## Related projects
-
-- [Desk Watch](https://github.com/PrBelamine/desk-watch): the original multi-app console with a rotary dial and a button.
-
-## License
-
-The sketches are released under the **GNU General Public License v3.0** (see `LICENSE`).
-
-Made by a teacher at Pr. BELAMINE MakerLab, so it also works well as a first electronics and coding project for students, at home or with a teacher.
+## Non vérifié
+- Les tests de logique joystick faits pour TEACHER_BMP280_JOY n'ont pas été rejoués ici.
+- Cohérence de la mémoire EEPROM avec une carte qui avait déjà TEACHER_BMP280_JOY : les réglages sont conservés, la zone du QNH est simplement ignorée.
+- SHT40 sur la carte : non essayé. Les commandes et formules viennent de la fiche Sensirion SHT4x (V7.3) : adresse 0x44 pour le SHT40-AD1B (le Grove SHT40 est supposé de cette variante, non vérifié ; les variantes BD1B et CD1B répondent à 0x45 et 0x46 et ne seraient pas détectées), commande 0xFD, T = -45 + 175 x S / 65535, HR = -6 + 125 x S / 65535, même CRC que le SHT31. L'hypothèse que le SHT31 refuse la commande 0xFD et que le SHT40 refuse 0x2400 (base de la détection) n'est pas vérifiée sur le matériel ; en cas d'échec, la lecture retombe sur « Capteur absent ».
