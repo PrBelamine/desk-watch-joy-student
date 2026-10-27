@@ -1,63 +1,51 @@
-// Desk Watch: JOY STUDENT EDITION — Temp & Hum / Timer / Counter / Stopwatch / Alarm / Dice / Chess clock / Melody / Clock, joystick-controlled
-// Hardware : Arduino UNO + Grove Base Shield, LCD RGB V4.0 (I2C),
-//            SHT31 or SHT40 (I2C 0x44, auto-detected), buzzer D3, Grove Thumb Joystick A1 (X) and A2 (Y) instead of button D4 and dial A1,
-//            optional RTC DS1307 / DS3231 (I2C 0x68).
-// Required library: "Grove - LCD RGB Backlight" (rgb_lcd.h).
-// SHT31 and RTC are read directly over I2C: no other library needed.
+// Desk Watch: JOY STUDENT EDITION — temperature and humidity, Pomodoro timer, counter, stopwatch, alarm, dice, chess clock and melodies, controlled with a joystick.
 //
-// All functions run in the background (humidity, alarm, pomodoro, stopwatch).
+// Hardware: Arduino UNO + Grove Base Shield; Grove LCD RGB V4.0 (I2C); SHT31 or SHT40 sensor (I2C 0x44, auto-detected);
+//           buzzer on D3; Grove Thumb Joystick (X on A1, Y on A2); RTC module DS1307 or DS3231 REQUIRED (I2C 0x68).
+// The RTC provides the time, the alarm and the automatic night mode. Without an RTC the device starts and Temp & Hum still works (time shown as "--:--:--"),
+// but the clock, the time setting and the alarm show "Install RTC module", and the automatic night mode is inactive.
+// Required library: "Grove - LCD RGB Backlight" (rgb_lcd.h). The SHT and the RTC are read directly over I2C: no other library needed.
+// Do not touch the joystick at power-up: its centre is measured at that moment.
 //
-// Navigation:
-//   Long press: open the MENU; inside the MENU, go back to the page
-//   Home                  : combined Temp & Hum / RTC time; stable when OK, alternates only for alerts; short press = MENU
-//   Menu: Favorite, Temp & Hum, Timer, Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings
-//   Settings: brightness, volume, startup sound, auto sleep, night mode, set time, favorite
-//   Night mode   : No / Auto (22:00 to 06:00, with RTC) / Yes : screen dimmed to 8 %, no alert beeps, melody muted ; the alarm still rings and displays normally
-//   Dial: turn right = next value / entry
-//   Settings             : dial = choose, short press = open / confirm
-//   Startup              : DESK WATCH, short melody, PR BELAMINE MAKERLAB, JOY STUDENT loading bar, module check
-//   MENU                 : dial = scroll, short press = enter
+// ---- Joystick (default setting NAV_VERTICAL = true) ----
+//   UP / DOWN           : scroll the menu, change a value (UP = next or more, DOWN = previous or less; held = repeat, faster after 1.5 s).
+//   RIGHT or CLICK      : OK (short press).
+//   RIGHT (or CLICK) twice within 0.4 s : double click.
+//   LEFT                : back (menu, cancel).
+//   LEFT held 2.5 s     : sleep; any movement wakes the device.
+//   A clear diagonal does nothing (one axis must dominate the other by a factor of 1.5).
+//   With NAV_VERTICAL = false: LEFT / RIGHT change values, UP = OK, DOWN = back (DOWN held = sleep).
+//   Joystick orientation: SWAP_XY, INV_X, INV_Y, INV_DIAL (top of the joystick block).
 //
-// Functions:
-//   Temp & Hum   : row 1 RTC time and background badges, always visible; row 2 temperature, humidity and OK.
-//                  Alerts replace row 2 every 2 s (measurements / temperature alert / measurements / humidity alert).
-//                  RGB colours the whole screen according to the displayed alert.
-//                  TOO HIGH (red) / TOO LOW (blue) / OK (green) ; double click = set the 4 thresholds
-//                  (T low, T high, H low, H high) with the dial, short press = next then confirm ;
-//                  thresholds are saved and reused at startup
-//   Counter      : each short press = +1 (immediate) ; dial = ask for a reset (OK = yes, double click or 5 s = no)
-//   Dice         : short press = roll (tick for 1 s then result), dial = number of sides (2, 4, 6, 8, 10, 12, 20, 30, 100), double click = menu
-//   Music        : dial = choose a melody, short press = play / pause / resume, double click = menu
-//   Chess        : two-player clock ; dial = time control (1+0 to 60+0, 5+3...), short press = start then next player, double click = pause / reset / menu
-//   Alarm (menu) : short press = set hours, minutes, armed, melody, alarm volume; double click = arm / disarm
-//                  Dial chooses each value; click advances and saves after volume. Melody repeats until stopped / snoozed.
-//                  Melody and alarm-volume settings play a live preview; leaving either setting stops the preview.
-//                  Melody selection previews at minimum volume; volume selection previews at the chosen alarm volume.
-//                  Eight alarm choices: the four Music tracks plus Aurora, Cosmic Pulse, Arcade Hero and Epic Rise.
-//   Pomodoro     : short press = start / pause, double click = reset (then, if already at zero, back to the menu),
-//                  when stopped, the potentiometer sets the work duration (1 min to 4 h)
-//   Stopwatch    : short press = start / stop, double click = reset, then (already at zero) double click or dial = menu
-//   Set time (Settings) : potentiometer = value, short press = next then confirm, long press = cancel
-//   Brightness (Settings) : potentiometer = level (5 to 100 %), short press = confirm, long press = cancel
-//   Ringing      : short press or double click = snooze, long press = stop
-//   Very long press (more than 2.5 s) : go to sleep (screen off, alarm active) ; while asleep, a press wakes it up
-//   Auto sleep   : delay set in Settings (never, 1, 2, 5, 10, 15, 30 min, 1 h) after the last press or dial turn ;
-//                        no auto sleep during a chess game in progress
-//   UNO LED (pin 13) : on while asleep and when the button is held for more than 2.5 s
-//   A short press is confirmed 0.3 s after release (double-click delay).
-//   Letters at the top right : ! temperature / humidity alert, A alarm armed, C stopwatch running,
-//                              M timer running on every page (last column, blinks off for 1 s every 10 s)
-
-// JOYSTICK variant: the Grove Thumb Joystick (X on A1, Y on A2) replaces button D4 and dial A1. Do not touch the joystick at start-up:
-//   the centre is measured then. The text above still applies with the following mapping (NAV_VERTICAL = true, the default):
-//   UP / DOWN = dial: menu scrolling and value changes (UP = next or more, DOWN = previous or less; auto-repeat when held, faster after 1.5 s);
-//   RIGHT or head CLICK = OK (short press); RIGHT (or CLICK) twice in a row (within 0.4 s) = double click; LEFT = back (long press: menu, back, cancel);
-//   LEFT held 2.5 s = sleep; any movement wakes the device. A clear diagonal does nothing (one axis must dominate the other by a factor of 1.5).
-//   Chess clock running: any movement switches player; a click on the joystick head pauses (elsewhere, click = OK).
-//   With NAV_VERTICAL = false: LEFT / RIGHT = dial, UP = OK, DOWN = back (DOWN held = sleep). INV_DIAL = true reverses the dial direction.
-//   Counter reset (NAV_VERTICAL = true): an up / down movement asks for confirmation; UP = yes, DOWN = no (LEFT = back, or no answer for 5 s = no).
-//   Chess clock running: joystick held 1.2 s (any direction) = pause; then LEFT = menu, or click / RIGHT x2 = reset.
-//   Orientation: SWAP_XY, INV_X, INV_Y (top of the joystick block).
+// ---- Menu (11 entries) ----
+//   Favorite, Temp & Hum, Timer, Counter, Stopwatch, Alarm, Dice, Chess clock, Melody, Settings, Sleep mode.
+//   Settings (8): brightness, volume, startup sound, auto sleep, night mode, set time, favorite, factory reset.
+//   The startup sound is off by default (change it in Settings). Settings are saved in EEPROM.
+//
+// ---- Pages ----
+//   Temp & Hum  : line 1 = RTC time and background-function indicators; line 2 = temperature, humidity and OK.
+//                 On alert, line 2 alternates every 2 s: readings / temperature alert / readings / humidity alert.
+//                 The backlight colours the screen: too high = red, too low = blue, OK = green.
+//                 Double click = set the four thresholds (low and high temperature, low and high humidity); OK = next, then confirm.
+//                 Thresholds are saved and reused at start-up.
+//                 UP / DOWN changes page (up / down arrows shown left of the clock): 1 readings, 2 minimum, 3 maximum, 4 average, 5 "AUT" (alternating with the arrows) which cycles through the four pages every 3 s.
+//   Timer (Pomodoro) : OK = start or pause; double click = reset (then back to the menu if already at zero).
+//                 When stopped, UP / DOWN sets the work time (1 to 60 min, then 65 min to 4 h in steps of 5). 5 min breaks, 15 min long break every 4th session.
+//   Counter     : OK adds 1; an UP / DOWN movement asks to reset (UP = yes, DOWN = no, LEFT = back, no answer for 5 s = no).
+//   Stopwatch   : OK = start or stop; double click = reset; if already at zero, double click or LEFT = menu.
+//   Alarm       : OK = set hour, minutes, activation, ringtone and volume; double click = enable or disable. Eight ringtones, with preview.
+//                 While ringing: OK or double click = snooze 5 min; LEFT = stop. The ring lasts 120 s at most.
+//   Dice        : OK = roll (rattle for 1 s, then result); UP / DOWN = number of sides (2, 4, 6, 8, 10, 12, 20, 30, 100); double click = menu.
+//   Chess clock : UP / DOWN = time control when stopped; OK = start. While running, any movement hands over to the other player;
+//                 joystick held 1.2 s or click = pause; then LEFT = menu, click or RIGHT x2 = reset.
+//   Melody      : UP / DOWN = choose; OK = play, pause or resume; double click = menu.
+//   Night mode  : No / Auto (10 pm to 6 am, with RTC) / Yes: brightness reduced to 8 %, alert beeps and startup melody muted; the alarm still rings.
+//   Auto sleep  : never, 1, 2, 5, 10, 15, 30 min or 1 h without activity; disabled while a chess game is running.
+//   Sleep mode  : screen off, alarm still active. The UNO LED (pin 13) lights up in sleep and while LEFT is held longer than 2.5 s.
+//   Top-right indicators: ! = temperature / humidity alert; R = alarm enabled; C = stopwatch running; M = timer running (column hidden for 1 s every 10 s).
+//   Start-up    : DESK WATCH, short melody (if enabled), PR BELAMINE MAKERLAB, JOY STUDENT loading bar, module check.
+//
+// The internal names "molette" / "dial" (potLive, potReset, INV_DIAL...) refer to the virtual dial simulated by UP / DOWN.
 
 #include <Wire.h>
 #include <EEPROM.h>
@@ -74,7 +62,6 @@ static const char TXT_Auto_22_6h_6[] PROGMEM = "Auto 22-6h";
 static const char TXT_Brightness_7[] PROGMEM = "Brightness";
 static const char TXT_Brillo_8[] PROGMEM = "Brillo";
 static const char TXT_Capteur_absent_9[] PROGMEM = "Capteur absent";
-static const char TXT_D_3u_3u_10[] PROGMEM = "D%-3u        %3u";
 static const char TXT_DESK_WATCH_11[] PROGMEM = "DESK WATCH";
 static const char TXT_FIN_12[] PROGMEM = "FIN";
 static const char TXT_Helligkeit_13[] PROGMEM = "Helligkeit";
@@ -102,7 +89,7 @@ static const char TXT_Volume_31[] PROGMEM = "Volume";
 const uint8_t PIN_BUZZER = 3;
 const uint8_t PIN_BUTTON = 4;
 const uint8_t PIN_LED    = 13;         // UNO L LED ; for a real red LED, plug in a Grove LED module and change this number
-const unsigned long LED_HOLD_MS = 2500;   // the LED turns on when the button is held long enough for sleep
+const unsigned long LED_HOLD_MS = 2500;   // the LED turns on when the joystick is held long enough for sleep
 const uint8_t PIN_POT    = A1;
 const uint8_t BTN_ACTIVE = HIGH;          // Grove module: HIGH = pressed
 const int  POT_MAX   = 1023;              // 675 if the shield switch is set to 3.3 V
@@ -318,10 +305,10 @@ uint8_t edH = 0, edM = 0;
 bool ringing = false, snoozing = false;
 bool standby = false;       // sleep: screen off, alarm still active
 static const uint8_t SLEEP_MIN[8] PROGMEM = { 0, 1, 2, 5, 10, 15, 30, 60 };   // auto sleep delays (minutes, 0 = never)
-unsigned long lastActivity = 0;   // last press or dial movement
+unsigned long lastActivity = 0;   // last joystick movement or click
 int lastPotSample = 0;
 unsigned long lastPotCheck = 0;
-unsigned long btnHeld = 0;        // duration of the current press (ms), 0 if the button is released
+unsigned long btnHeld = 0;        // duration of the current press (ms), 0 if the joystick is released
 unsigned long ringStart = 0, snoozeUntil = 0;
 int lastFiredMin = -1;
 
@@ -509,7 +496,7 @@ void stopAlarmPreview() {
   alarmPreview = false;
 }
 
-// Shared by the real alarm and its preview; no delay blocks the button or dial.
+// Shared by the real alarm and its preview; no delay blocks the joystick.
 void alarmMelodyTick(unsigned long now, uint8_t volume) {
   if ((long)(now - alarmNoteEnd) < 0) return;
   musicToneStop();
@@ -560,7 +547,7 @@ void beep(uint8_t n, unsigned int ms) {
 
 const unsigned long DOUBLE_MS = 300;       // maximum delay between two presses for a double click
 
-// ---------- Grove joystick (replaces button D4 and dial A1) ----------
+// ---------- Grove joystick ----------
 const uint8_t PIN_STICK_X = A1, PIN_STICK_Y = A2;
 const bool SWAP_XY = true;     // true: X and Y swapped (board turned by a quarter turn in the case).
 const bool INV_X = false;      // true: left and right inverted.
@@ -609,7 +596,7 @@ uint8_t stickStep(int x, int y, unsigned long now, bool anyMode) {
     return anyMode ? SE_ANY : d;
   }
   if (m < OFF_DELTA) { st.held = SE_NONE; return SE_NONE; }   // Back to the centre.
-  if (!anyMode && (st.held == (NAV_VERTICAL ? SE_UP : SE_LEFT) || st.held == (NAV_VERTICAL ? SE_DOWN : SE_RIGHT)) && now >= st.tNext) {   // Auto-repeat on the dial directions.
+  if (!anyMode && (st.held == (NAV_VERTICAL ? SE_UP : SE_LEFT) || st.held == (NAV_VERTICAL ? SE_DOWN : SE_RIGHT)) && now >= st.tNext) {   // Auto-repeat on the UP / DOWN directions (virtual dial).
     st.tNext = now + ((now - st.tStart >= REPEAT_FAST_AFTER_MS) ? REPEAT_FAST_MS : REPEAT_MS);
     return st.held;
   }
@@ -626,7 +613,7 @@ void stickCalibrate() {
   st.cx = x0; st.cy = y0;
 }
 
-// Replaces the old readButton(): the joystick produces the same events as the button (EV_SHORT, EV_DOUBLE, EV_LONG, EV_VLONG, EV_PRESS)
+// readButton(): the joystick produces the events of a button (EV_SHORT, EV_DOUBLE, EV_LONG, EV_VLONG, EV_PRESS)
 // and drives the virtual dial (stickDelta, potActive).
 uint8_t readButton() {
   joystickClicked = false;
@@ -706,13 +693,13 @@ void loadCfg() {
   if (cfg.magic != 0xAC || cfg.aH > 23 || cfg.aM > 59 || cfg.armed > 1 ||
       cfg.workMin < 1 || cfg.workMin > 240) {
     cfg.magic = 0xAC; cfg.aH = 7; cfg.aM = 0; cfg.armed = 0; cfg.workMin = 25;
-    cfg.bright = 30; cfg.sound = 1; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0; cfg.tLo2 = 0xFF;       // thresholds are re-checked below
+    cfg.bright = 30; cfg.sound = 0; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0; cfg.tLo2 = 0xFF;       // thresholds are re-checked below
   }
   if (cfg.sleep > 7) cfg.sleep = 0;                     // auto sleep: off by default
   if (cfg.night > 2) cfg.night = 1;                     // night mode: automatic by default
   if (cfg.home > 6) cfg.home = 0;                       // Favorite: Menu by default
   if (cfg.volume > 2) cfg.volume = 1;                   // medium volume by default
-  if (cfg.sound > 1) cfg.sound = 1;                    // startup sound: on by default
+  if (cfg.sound > 1) cfg.sound = 0;                    // startup sound: off by default
   // thresholds: default values if missing or inconsistent
   if (cfg.tLo2 < T_MIN2 || cfg.tHi2 > T_MAX2 || cfg.tHi2 < cfg.tLo2 + T_GAP2 ||
       cfg.hLo < H_MIN || cfg.hHi > H_MAX || cfg.hHi < cfg.hLo + H_GAP) {
@@ -1129,7 +1116,7 @@ void drawParams(uint8_t e, bool draw) {
     if (e == EV_SHORT) {
       if (parIdx == 8) {
         cfg.magic = 0xAC; cfg.aH = 7; cfg.aM = 0; cfg.armed = 0; cfg.workMin = 25;
-        cfg.bright = 30; cfg.sound = 1; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0;
+        cfg.bright = 30; cfg.sound = 0; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0;
         cfg.tLo2 = T_LO_DEFAULT2; cfg.tHi2 = T_HI_DEFAULT2; cfg.hLo = H_LO_DEFAULT; cfg.hHi = H_HI_DEFAULT;
         alarmCfg.magic = 0xB1; alarmCfg.melody = 0; alarmCfg.volume = 1;
         EEPROM.put(0, cfg); EEPROM.put(sizeof(cfg), alarmCfg);
@@ -1211,11 +1198,11 @@ void drawTempHum(uint8_t e, bool draw);
 // Home uses the combined measurements / clock page, without automatic page changes.
 void drawHome(uint8_t e, bool draw) {
   if (e == EV_DOUBLE) { enterMode(M_TH); thSub = 1; potReset(); return; }   // set the thresholds
-  if (e != EV_NONE || potLive()) { openMenu(); return; }   // button or dial: open the menu
+  if (e != EV_NONE || potLive()) { openMenu(); return; }   // joystick: open the menu
   drawTempHum(EV_NONE, draw);
 }
 
-// Clock page alone (chosen in Settings > Home): button or dial = menu
+// Clock page alone (chosen in Settings > Home): joystick = menu
 void drawClockPage(uint8_t e, bool draw) {
   if (e != EV_NONE || potLive()) { openMenu(); return; }
   drawClock(draw);
@@ -1272,14 +1259,15 @@ void drawTempHum(uint8_t e, bool draw) {
   }
   if (thSub >= 1 && thSub <= 4 && potLive()) thEdit(thSub);
   if (thSub == 0 && potLive()) {
-    if (stickPush == SE_DOWN) thView = (thView + 1) % 3;
-    else if (stickPush == SE_UP) thView = (thView + 2) % 3;
+    if (stickPush == SE_DOWN) thView = (thView + 1) % 5;
+    else if (stickPush == SE_UP) thView = (thView + 4) % 5;
     potReset();
   }
   if (!draw) return;
   char b[17];
-  if (rtcPresent) snprintf_P(b, sizeof(b), PSTR("%02d:%02d:%02d"), nowH, nowM, nowS);
-  else strcpy_P(b, PSTR("--:--:--"));
+  const char* pre = (thView == 4 && (millis() / 1500UL) % 2 == 0) ? "AUT " : "\002\001  ";   // pages 1 to 4: up / down arrows left of the clock; page 5: "AUT" alternating with the arrows (1.5 s); the clock occupies columns 4 to 11
+  if (rtcPresent) snprintf_P(b, sizeof(b), PSTR("%s%02d:%02d:%02d"), pre, nowH, nowM, nowS);
+  else snprintf_P(b, sizeof(b), PSTR("%s--:--:--"), pre);
   line(0, b); badges(M_TH);
   if (thSub == 5) {
     color(150, 100, 0);
@@ -1304,7 +1292,9 @@ void drawTempHum(uint8_t e, bool draw) {
   }
 
   // Second row: measurements / full alert, with measurements before each alert.
-  if (thView == 1) {
+  uint8_t view = thView;                                           // 0 readings, 1 minimum, 2 maximum, 3 average, 4 AUT (cycles through the four pages every 3 s)
+  if (view == 4) view = (millis() / 3000UL) % 4;
+  if (view == 1 || view == 2) {
     int16_t tLo = thTempSamples[0], tHi = thTempSamples[0];
     int16_t hLo = thHumSamples[0], hHi = thHumSamples[0];
     for (uint8_t i = 1; i < thSampleCount; i++) {
@@ -1313,7 +1303,7 @@ void drawTempHum(uint8_t e, bool draw) {
       if (thHumSamples[i] < hLo) hLo = thHumSamples[i];
       if (thHumSamples[i] > hHi) hHi = thHumSamples[i];
     }
-    bool showMin = ((millis() / 2500UL) % 2 == 0);
+    bool showMin = (view == 1);
     int16_t tExtreme = showMin ? tLo : tHi;
     int16_t hExtreme = showMin ? hLo : hHi;
     int textLen = snprintf_P(b, sizeof(b), PSTR("%s T%s%d.%d%c H%d%%"), showMin ? "MIN" : "MAX",
@@ -1324,7 +1314,7 @@ void drawTempHum(uint8_t e, bool draw) {
     line(1, b);
     return;
   }
-  if (thView == 2) {
+  if (view == 3) {
     int16_t tAvg = thSampleCount ? thTempSum / thSampleCount : temp10;
     int16_t hAvg = thSampleCount ? thHumSum / thSampleCount : hum10;
     int textLen = snprintf_P(b, sizeof(b), TR("MOY T%s%d.%d%c H%d%%", "AVG T%s%d.%d%c H%d%%", "PROM T%s%d.%d%c H%d%%", "DUR T%s%d.%d%c H%d%%"), tAvg < 0 ? "-" : "", abs(tAvg)/10, abs(tAvg)%10, 0xDF, (hAvg + 5)/10);
@@ -1580,20 +1570,27 @@ void drawDie(uint8_t e, bool draw, bool tap) {
     }
   }
   if (!draw) return;
-  char b[17], h[12];
+  char b[17];
   color(170, 60, 130);
-  lineP(0, TR("DE", "DICE", "DADO", "WUERFEL"));
+  // Line 1: title and gesture hint (columns 13 to 15 are kept for the indicators); line 2: D + faces on the left, text or number right-aligned.
+  if (dieRolling)       lineP(0, TR("DE  lance...", "DICE rolling", "DADO tirando", "WUERFEL rollt"));
+  else if (dieVal != 0) lineP(0, TR("DE OK=relance", "DICE OK=roll", "DADO OK=tirar", "WUERFEL OK"));
+  else                  lineP(0, TR("DE  \002\001 faces", "DICE \002\001 sides", "DADO \002\001 caras", "WUERFEL \002\001"));
   badges(M_DIE);
+  char r[12];                                          // partie droite de la ligne 2, alignée sur la colonne 15
   if (dieRolling) {
     dieShow = rollDie(faces);
     buzz(1800, 5);                                     // small tick during the roll
-    snprintf_P(b, sizeof(b), TXT_D_3u_3u_10, faces, dieShow);
+    snprintf_P(r, sizeof(r), PSTR("%3u"), dieShow);
   } else if (dieVal != 0) {
-    snprintf_P(b, sizeof(b), TXT_D_3u_3u_10, faces, dieVal);
+    snprintf_P(r, sizeof(r), PSTR("[%3u]"), dieVal);
   } else {
-    strcpy_P(h, TR("OK=lancer", "OK=roll", "OK=tirar", "OK=wuerfeln"));
-    snprintf_P(b, sizeof(b), PSTR("D%-3u  %s"), faces, h);
+    strcpy_P(r, TR("OK=lancer", "OK=roll", "OK=tirar", "OK=wuerfeln"));
   }
+  uint8_t ln = snprintf_P(b, sizeof(b), PSTR("D%-3u"), faces);
+  uint8_t rl = strlen(r);
+  while (ln < 16 - rl) b[ln++] = ' ';
+  strcpy(b + ln, r);
   line(1, b);
 }
 
