@@ -45,7 +45,7 @@
 //                         La veille automatique est désactivée pendant une partie d’échecs en cours.
 //   LED de l’UNO (broche 13) : allumée en veille et pendant un appui dépassant 2,5 s.
 //   Un appui court est confirmé 0,3 s après le relâchement, pour permettre le double clic.
-//   Indicateurs en haut à droite : ! = alerte température/humidité ; A = réveil activé ; C = chronomètre en cours.
+//   Indicateurs en haut à droite : ! = alerte température/humidité ; R = réveil activé ; C = chronomètre en cours.
 //   Minuteur en cours : M sur toutes les pages ; dernière colonne, masquée 1 s toutes les 10 s.
 
 // Variante JOYSTICK : le Grove Thumb Joystick (X sur A1, Y sur A2) remplace le bouton D4 et la molette A1. Ne pas toucher le joystick au démarrage :
@@ -134,14 +134,15 @@ rgb_lcd lcd;
 
 enum { M_TH, M_POMO, M_CHRONO, M_TALLY, M_DIE, M_CHESS, M_MUSIC, M_PARAMS, M_HOME, M_ALARM, M_SETCLOCK, M_BRIGHT, M_MENU, M_CLOCK, M_SLEEP };
 const uint8_t N_MENU = 10;
-const uint8_t N_PAR = 7;   // visible settings (the language choice was removed: one language per edition)
+const uint8_t N_PAR = 8;   // visible settings (the language choice was removed: one language per edition)
 uint8_t mode = M_HOME, prevMode = M_HOME;   // Valeurs de l’énumération M_*.
 uint8_t menuIdx = 0;
+unsigned long menuScrollStart = 0;
 uint8_t brightBackup = 100, brightIdx = 7;
 
 enum { EV_NONE, EV_SHORT, EV_LONG, EV_VLONG, EV_DOUBLE, EV_PRESS };
 
-struct Settings { uint8_t magic, aH, aM, armed, workMin, bright, tLo2, tHi2, hLo, hHi, sound, lang, volume, home, night, sleep; } cfg;   // lang : 0 français, 1 anglais, 2 espagnol, 3 allemand ; home : favori (0 auto, 1 Temp et Hum, 2 horloge, 3 minuteur, 4 chrono, 5 compteur) ; night : mode nuit (0 non, 1 automatique avec RTC, 2 oui) ; sleep : indice du délai dans SLEEP_MIN (0 = jamais).
+struct Settings { uint8_t magic, aH, aM, armed, workMin, bright, tLo2, tHi2, hLo, hHi, sound, lang, volume, home, night, sleep; } cfg;   // lang : 0 français, 1 anglais, 2 espagnol, 3 allemand ; home : favori (0 menu, 1 Temp et Hum, 2 minuteur, 3 chrono, 4 compteur, 5 dé, 6 pendule d’échecs) ; night : mode nuit (0 non, 1 automatique avec RTC, 2 oui) ; sleep : indice du délai dans SLEEP_MIN (0 = jamais).
 
 // Textes de cette édition (une seule langue par version : le nom du fichier l’indique), conservés en mémoire flash.
 #define TR(fr, en, es, de) PSTR(fr)
@@ -170,7 +171,7 @@ unsigned long alarmNoteEnd = 0;
 bool alarmPreview = false;
 uint8_t previewMelody = 0, previewVolume = 0;
 uint8_t parSub = 0, parBackup = 0;   // Réglage ouvert et valeur sauvegardée avant modification.
-uint8_t parIdx = 1;          // Page Paramètres (identifiants internes) : 1 luminosité, 2 volume, 3 son de démarrage, 4 veille automatique, 5 mode nuit, 6 heure, 7 favori
+uint8_t parIdx = 1;          // Page Paramètres : 1 luminosité, 2 volume, 3 son, 4 veille, 5 mode nuit, 6 heure, 7 favori, 8 réglage usine
 unsigned int tallyCount = 0;  // Compteur manuel.
 bool tallyRun = true;
 uint8_t tallySub = 0;         // 0 = comptage, 1 = confirmation de remise à zéro.
@@ -404,6 +405,7 @@ void color(uint8_t r, uint8_t g, uint8_t b) {
       (r == 0 && g == 80 && (b == 255 || b == 220)) ||
       (r == 0 && g == 160 && b == 40) ||
       (r == 0 && g == 170 && b == 50) ||
+      (r == 0 && g == 200 && b == 45) ||
       (r == 0 && g == 140 && b == 170) ||
       (r == 60 && g == 60 && (b == 60 || b == 120));
   if (mode == M_TH && r == 0 && g == 160 && b == 40) statusColor = false;
@@ -698,15 +700,19 @@ uint8_t readButton() {
 // ---------- Configuration EEPROM ----------
 void loadCfg() {
   EEPROM.get(0, cfg);
-  if (cfg.magic != 0xA9 || cfg.aH > 23 || cfg.aM > 59 || cfg.armed > 1 ||
+  if (cfg.magic == 0xAB) {
+    if (cfg.home == 2) cfg.home = 0; else if (cfg.home >= 3 && cfg.home <= 5) cfg.home--;
+    cfg.magic = 0xAC; EEPROM.put(0, cfg);
+  }
+  if (cfg.magic != 0xAC || cfg.aH > 23 || cfg.aM > 59 || cfg.armed > 1 ||
       cfg.workMin < 1 || cfg.workMin > 240) {
-    cfg.magic = 0xA9; cfg.aH = 7; cfg.aM = 0; cfg.armed = 0; cfg.workMin = 25;
-    cfg.bright = 100; cfg.sound = 1; cfg.volume = 2; cfg.home = 0; cfg.night = 1; cfg.sleep = 0; cfg.tLo2 = 0xFF;       // Les seuils sont vérifiés plus bas.
+    cfg.magic = 0xAC; cfg.aH = 7; cfg.aM = 0; cfg.armed = 0; cfg.workMin = 25;
+    cfg.bright = 30; cfg.sound = 1; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0; cfg.tLo2 = 0xFF;       // Les seuils sont vérifiés plus bas.
   }
   if (cfg.sleep > 7) cfg.sleep = 0;                     // Veille automatique désactivée par défaut.
   if (cfg.night > 2) cfg.night = 1;                     // Mode nuit automatique par défaut.
-  if (cfg.home > 5) cfg.home = 0;                       // Favori automatique par défaut.
-  if (cfg.volume > 2) cfg.volume = 2;                   // Volume maximal par défaut.
+  if (cfg.home > 6) cfg.home = 0;                       // Favori Menu par défaut.
+  if (cfg.volume > 2) cfg.volume = 1;                   // Volume moyen par défaut.
   if (cfg.sound > 1) cfg.sound = 1;                    // Son de démarrage activé par défaut.
   // Rétablit les seuils par défaut s’ils sont absents ou incohérents.
   if (cfg.tLo2 < T_MIN2 || cfg.tHi2 > T_MAX2 || cfg.tHi2 < cfg.tLo2 + T_GAP2 ||
@@ -714,7 +720,7 @@ void loadCfg() {
     cfg.tLo2 = T_LO_DEFAULT2; cfg.tHi2 = T_HI_DEFAULT2;
     cfg.hLo = H_LO_DEFAULT;   cfg.hHi = H_HI_DEFAULT;
   }
-  if (cfg.bright < 1 || cfg.bright > 100) cfg.bright = 100;   // Ancienne sauvegarde ou valeur incorrecte.
+  if (cfg.bright < 1 || cfg.bright > 100) cfg.bright = 30;   // Ancienne sauvegarde ou valeur incorrecte.
   EEPROM.get(sizeof(cfg), alarmCfg);
   if (alarmCfg.magic != 0xB1 || alarmCfg.melody >= N_ALARM_TUNES || alarmCfg.volume > 2) {
     alarmCfg.magic = 0xB1; alarmCfg.melody = 0; alarmCfg.volume = cfg.volume;
@@ -931,8 +937,8 @@ void pomoTick() {
 // ---------- Écrans ----------
 // ---------- Navigation ----------
 // Lecture et modification des valeurs des paramètres selon leur indice.
-uint8_t parValue(uint8_t i) { return i == 2 ? cfg.volume : i == 3 ? cfg.sound : i == 4 ? cfg.sleep : i == 5 ? cfg.night : cfg.home; }
-void setParValue(uint8_t i, uint8_t v) { if (i == 2) cfg.volume = v; else if (i == 3) cfg.sound = v; else if (i == 4) cfg.sleep = v; else if (i == 5) cfg.night = v; else cfg.home = v; }
+uint8_t parValue(uint8_t i) { return i == 2 ? cfg.volume : i == 3 ? cfg.sound : i == 4 ? cfg.sleep : i == 5 ? cfg.night : i == 7 ? cfg.home : 0; }
+void setParValue(uint8_t i, uint8_t v) { if (i == 2) cfg.volume = v; else if (i == 3) cfg.sound = v; else if (i == 4) cfg.sleep = v; else if (i == 5) cfg.night = v; else if (i == 7) cfg.home = v; }
 
 void chessPause() {                    // Quitter la page met la pendule d’échecs en pause.
   if (chessState == 1) { chessBase[chessSide] -= (long)(millis() - chessTurn); chessState = 2; }
@@ -945,6 +951,7 @@ void enterMode(uint8_t m) {
   if (mode == M_CHESS && m != M_CHESS) chessPause();
   if (mode == M_MUSIC && m != M_MUSIC) musicToneStop();
   mode = m;
+  if (m == M_MENU) menuScrollStart = millis();
   clockSub = 0; alarmSub = 0; alarmExitPending = false; alarmSavedPending = false; thSub = 0; thSavedPending = false; thView = 0; parIdx = 1; parSub = 0; tallySub = 0;
   if (m == M_DIE) dieRolling = false;
   if (m == M_MUSIC) { musicState = 0; musicPos = 0; musicRemain = 0; }
@@ -960,11 +967,10 @@ void enterMode(uint8_t m) {
   lastDraw = 0;
 }
 
-// Accueil : ouvre la page choisie dans les paramètres ; 0 = automatique.
+// Démarrage/réveil : ouvre la page choisie dans les paramètres ; 0 = menu.
 void goHome() {
   uint8_t h = cfg.home;
-  if (h == 2 && !rtcPresent) h = 1;                  // Sans RTC, le favori Horloge est remplacé par Temp et Hum.
-  enterMode(h == 0 ? M_HOME : h == 1 ? M_TH : h == 2 ? M_CLOCK : h == 3 ? M_POMO : h == 4 ? M_CHRONO : M_TALLY);
+  enterMode(h == 0 ? M_MENU : h == 1 ? M_TH : h == 2 ? M_POMO : h == 3 ? M_CHRONO : h == 4 ? M_TALLY : h == 5 ? M_DIE : M_CHESS);
 }
 
 // Revient aux paramètres sur l’entrée d’indice i.
@@ -977,6 +983,7 @@ void openMenu() {
   prevMode = mode;
        // L’entrée du menu suit la position de la molette.
   mode = M_MENU;
+  menuScrollStart = millis();
   clockSub = 0; alarmSub = 0; thSub = 0; parSub = 0; tallySub = 0;
   potReset();
   lastDraw = 0;
@@ -1001,10 +1008,10 @@ uint8_t menuFromPot() {
 
 // Lettres des fonctions actives en arrière-plan, sauf celle de la page affichée ; colonnes 13 à 15, numérotées depuis zéro.
 void badges(uint8_t self) {
-  char all[5];                                       // Ordre : ! A C M ; le minuteur reste le plus à droite.
+  char all[5];                                       // Ordre : ! R C M ; le minuteur reste le plus à droite.
   uint8_t n = 0;
   if (self != M_TH     && anyAlert())                all[n++] = '!';
-  if (self != M_ALARM  && cfg.armed && rtcPresent)   all[n++] = 'A';
+  if (self != M_ALARM  && cfg.armed && rtcPresent)   all[n++] = 'R';
   if (self != M_CHRONO && chronoRun)                 all[n++] = 'C';
   if (self != M_POMO   && pomoRun)                   all[n++] = ((millis() / 1000UL) % 10 == 9) ? ' ' : 'M';   // M pour le minuteur partout ; masqué une seconde toutes les dix secondes.
   char s[4] = { ' ', ' ', ' ', 0 };                  // Colonnes 13 à 15, alignement à droite.
@@ -1019,13 +1026,13 @@ uint8_t menuMode(uint8_t i);
 void sleepNow();
 void drawMenu(uint8_t e, bool draw) {
   static const char names[] PROGMEM =
-  "Temp et Hum\0"
+  "Heure Temp Hum\0"
   "Minuteur\0"
   "Compteur\0"
   "Chrono\0"
   "Reveil\0"
   "De\0"
-  "Pend. echecs\0"
+  "Pendule Echecs\0"
   "Melodie\0"
   "Parametres\0"
   "Mode veille\0"
@@ -1041,9 +1048,18 @@ void drawMenu(uint8_t e, bool draw) {
   mode = displayMode;
   snprintf_P(b, sizeof(b), PSTR("MENU       %2d/%d"), menuIdx + 1, N_MENU);
   line(0, b);
-  char nm[13]; strcpy_P(nm, packedText(names, menuIdx));
-  if (NAV_VERTICAL) snprintf_P(b, sizeof(b), PSTR("\001\002 %-12s\003"), nm);   // Flèche bas, flèche haut, titre, flèche droite.
-  else snprintf_P(b, sizeof(b), PSTR("> %s"), nm);
+  char nm[20]; strcpy_P(nm, packedText(names, menuIdx));
+  if (NAV_VERTICAL) {                                  // Flèches fixes ; seul le titre défile dans les 12 colonnes centrales.
+    const uint8_t VIEW = 12;
+    uint8_t len = strlen(nm);
+    uint8_t offset = len > VIEW ? ((millis() - menuScrollStart) / 450UL) % (len + 3) : 0;
+    b[0] = 1; b[1] = 2; b[2] = ' ';
+    for (uint8_t i = 0; i < VIEW; i++) {
+      uint8_t p = offset + i;
+      b[3 + i] = (p < len) ? nm[p] : ' ';
+    }
+    b[15] = 3; b[16] = 0;
+  } else snprintf_P(b, sizeof(b), PSTR("> %s"), nm);
   line(1, b);
 }
 
@@ -1082,14 +1098,15 @@ void drawClock(bool draw) {
 }
 
 void introSound();
-// Favoris possibles : 0 automatique, 1 Temp et Hum, 2 horloge, 3 minuteur, 4 chronomètre, 5 compteur.
+// Favoris possibles : 0 menu, 1 Temp et Hum, 2 minuteur, 3 chronomètre, 4 compteur, 5 dé, 6 pendule d’échecs.
 static const char homeName[] PROGMEM =
-  "Auto\0"
-  "Temp et Hum\0"
-  "Horloge\0"
+  "Menu\0"
+  "Heure Temp Hum\0"
   "Minuteur\0"
   "Chrono\0"
   "Compteur\0"
+  "De\0"
+  "Pendule Echecs\0"
 ;
 // Paramètres : luminosité, volume, son de démarrage, veille automatique, mode nuit, heure et favori.
 
@@ -1100,22 +1117,37 @@ void drawParams(uint8_t e, bool draw) {
     if (e == EV_SHORT) {
       if (parIdx == 1)      { enterMode(M_BRIGHT); return; }
       else if (parIdx == 6) { enterMode(M_SETCLOCK); return; }
+      else if (parIdx == 8) { parSub = 1; potReset(); return; }
       parSub = 1; parBackup = parValue(parIdx); potReset();
     }
   } else {
     if (potLive()) {
       uint8_t cur = parValue(parIdx);
-      uint8_t count = parIdx == 2 ? 3 : parIdx == 3 ? 2 : parIdx == 4 ? 8 : parIdx == 5 ? 3 : 6;
+      uint8_t count = parIdx == 2 ? 3 : parIdx == 3 ? 2 : parIdx == 4 ? 8 : parIdx == 5 ? 3 : parIdx == 7 ? 7 : 0;
       uint8_t v = potSelect(count, cur, parIdx == 2 ? 40 : 30);
-      if (v != cur) { setParValue(parIdx, v); if (parIdx == 2) beep(1, 100); }
+      if (parIdx != 8 && v != cur) { setParValue(parIdx, v); if (parIdx == 2) beep(1, 100); }
     }
     if (e == EV_SHORT) {
-      saveCfg(); parSub = 0; potReset();
+      if (parIdx == 8) {
+        cfg.magic = 0xAC; cfg.aH = 7; cfg.aM = 0; cfg.armed = 0; cfg.workMin = 25;
+        cfg.bright = 30; cfg.sound = 1; cfg.volume = 1; cfg.home = 0; cfg.night = 1; cfg.sleep = 0;
+        cfg.tLo2 = T_LO_DEFAULT2; cfg.tHi2 = T_HI_DEFAULT2; cfg.hLo = H_LO_DEFAULT; cfg.hHi = H_HI_DEFAULT;
+        alarmCfg.magic = 0xB1; alarmCfg.melody = 0; alarmCfg.volume = 1;
+        EEPROM.put(0, cfg); EEPROM.put(sizeof(cfg), alarmCfg);
+        color(0, 200, 45); lineP(0, PSTR("Confirmation Ok")); lineP(1, PSTR(""));
+        delay(1500); parSub = 0; backToParams(1); potReset(); applyColor(); return;
+      } else {
+        saveCfg(); parSub = 0; potReset();
+        if (parIdx == 7) {
+          color(0, 200, 45); lineP(0, PSTR("Confirmation Ok")); lineP(1, PSTR(""));
+          delay(1500); backToParams(1); potReset(); applyColor(); return;
+        }
+      }
       if (parIdx == 3 && cfg.sound) introSound();
     }
   }
   if (!draw) return;
-  char b[17], nm[14], val[14];
+  char b[17], nm[14], val[18];
   color(40, 90, 160);
   strcpy_P(nm, parIdx == 1 ? TR_PTR(TXT_Luminosite_15, TXT_Brightness_7, TXT_Brillo_8, TXT_Helligkeit_13)
              : parIdx == 2 ? TR_PTR(TXT_Volume_31, TXT_Volume_31, PSTR("Volumen"), PSTR("Lautstaerke"))
@@ -1123,7 +1155,8 @@ void drawParams(uint8_t e, bool draw) {
              : parIdx == 4 ? TR("Veille auto", "Auto sleep", "Reposo auto", "Auto-Standby")
              : parIdx == 5 ? TR("Mode nuit", "Night mode", "Modo noche", "Nachtmodus")
              : parIdx == 6 ? TR("Regler heure", "Set time", "Ajustar hora", "Uhr stellen")
-                           : TR("Favori", "Favorite", "Favorito", "Favorit"));
+             : parIdx == 7 ? TR("Favori", "Favorite", "Favorito", "Favorit")
+                           : TR("Regl. usine", "Factory", "Fabrica", "Werk"));
   snprintf_P(b, sizeof(b), PSTR("%-12s %d/%d"), nm, parIdx, N_PAR);
   line(0, b);
   if (parIdx == 6) {
@@ -1141,6 +1174,10 @@ void drawParams(uint8_t e, bool draw) {
     strcpy_P(val, packedText(homeName, cfg.home));
     snprintf_P(b, sizeof(b), parSub ? TXT_12s_5 : TXT_12s_OK_1, val);
     line(1, b);
+    return;
+  }
+  if (parIdx == 8) {
+    lineP(1, parSub ? PSTR("OK confirmer") : PSTR("OK=ouvrir"));
     return;
   }
   if (parIdx == 4) {
@@ -1785,7 +1822,7 @@ void setup() {
   centeredP(0, rtcPresent ? TR("Horloge RTC OK", "RTC clock OK", "Reloj RTC OK", "RTC-Uhr OK") : TR("Sans horloge RTC", "No RTC clock", "Sin reloj RTC", "Keine RTC-Uhr"));
   centeredP(1, shtOk ? TR_PTR(PSTR("Capteur OK"), TXT_Sensor_OK_26, TXT_Sensor_OK_26, TXT_Sensor_OK_26) : TR_PTR(TXT_Capteur_absent_9, TXT_Sensor_missing_29, TXT_Sensor_ausente_27, TXT_Sensor_fehlt_28));
   delay(1200);
-  mode = M_MENU;
+  goHome();
   potReset();
   lastActivity = millis();
 }
