@@ -14,7 +14,7 @@ Temp et Hum (5 pages, haut / bas pour changer, flèches affichées à gauche de 
 
 Dé : la ligne 1 rappelle les gestes (↑↓ faces, OK=relance) et la ligne 2 affiche D + faces à gauche, texte ou résultat entre crochets à droite.
 
-Paramètres (8) : luminosité, volume, son de démarrage, veille automatique, mode nuit, régler l'heure, favori, réglage usine. Le son de démarrage est désactivé par défaut (carte neuve ou après un réglage usine ; une carte déjà configurée garde son réglage).
+Paramètres (8) : luminosité (85 % par défaut), volume (cinq niveaux : Min, Bas, Moyen, Fort, Max ; Moyen par défaut), son de démarrage, veille automatique, mode nuit, régler l'heure, favori, réglage usine. Le son de démarrage est désactivé par défaut (carte neuve ou après un réglage usine ; une carte déjà configurée garde son réglage).
 
 ## Gestes (réglage par défaut, logique verticale)
 | Geste | Effet |
@@ -35,6 +35,8 @@ Réglages au début du bloc joystick : `NAV_VERTICAL`, `INV_DIAL`, `SWAP_XY`, `I
 
 ## Taille (IDE Arduino 2.3.10, Arduino UNO, compilation du 27/10/2026)
 FR : 28 266 octets de programme (87 % de 32 256) et 694 octets de RAM globale (33 % de 2 048). EN : 28 180 octets (87 %) et 694 octets de RAM (33 %). Il reste environ 4 000 octets de programme ; les chiffres du 22/10 (25 154 octets) ne sont plus valables.
+
+Après le passage du volume à cinq niveaux (28/10), le programme grossit d'environ 100 octets (estimation avr-gcc : FR 28 420 octets, EN 28 334 octets, soit 87 à 88 %). La valeur exacte est à relever dans l'IDE Arduino.
 
 ## Vérifié sur la carte
 - 25/10/2026 : une première console a été imprimée, montée et testée sur une vraie carte avec le firmware de l'époque : tout a fonctionné comme prévu.
