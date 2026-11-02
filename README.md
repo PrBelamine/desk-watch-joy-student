@@ -1,4 +1,47 @@
-# Desk Watch : JOY STUDENT EDITION - firmware (mis à jour le 27/10/2026)
+# Desk Watch JOY STUDENT
+
+**Français** | [English](README_EN.md)
+
+Une console de bureau pour les élèves, basée sur un **Arduino UNO R3 et des modules Grove**, pilotée avec un joystick : température et humidité, minuteur Pomodoro, compteur, chronomètre, réveil, dé, pendule d'échecs et mélodies. Les modules se branchent avec des câbles Grove, sans soudure.
+
+**[MiniTech Club : présentation, montage, guides et installation USB](https://minitech.club/desk-watch-joy-student/)**
+
+## Installer depuis MiniTech Club
+
+Ouvre la [section « Installer et tester »](https://minitech.club/desk-watch-joy-student/#programme) dans **Chrome ou Edge sur ordinateur**.
+
+1. Choisis **Français** ou **English** en haut de la page : ce choix détermine aussi la langue du programme installé.
+2. Branche ton **Arduino UNO R3 (ATmega328P)** avec un câble USB qui transmet les données. Ferme l'IDE Arduino et son moniteur série.
+3. Clique sur **Installer JOY STUDENT**, puis sélectionne le port USB de ta carte.
+4. Garde le câble branché jusqu'à la fin de l'installation et de la vérification.
+5. Au redémarrage, **laisse le joystick au repos** pendant le calibrage de sa position centrale.
+6. Teste l'écran, le joystick, les mesures du capteur SHT, l'heure du RTC et le buzzer avant de fermer le boîtier.
+
+Cette méthode ne demande ni IDE Arduino ni installation de bibliothèque. Elle remplace le programme présent sur la carte. L'installateur vise l'**UNO R3**, pas l'UNO R4. Firefox, Safari et les navigateurs sur téléphone ne sont pas pris en charge par cette page.
+
+## Modifier le programme avec l'IDE Arduino
+
+Pour lire ou modifier le code, utilise l'un des deux croquis de ce dépôt :
+
+- [Programme français](Desk_Watch_JOY_STUDENT_Edition_FR/Desk_Watch_JOY_STUDENT_Edition_FR.ino)
+- [Programme anglais](Desk_Watch_JOY_STUDENT_Edition_EN/Desk_Watch_JOY_STUDENT_Edition_EN.ino)
+
+Installe la bibliothèque **Grove - LCD RGB Backlight**, ouvre le croquis dans son dossier du même nom, sélectionne **Arduino Uno** et le bon port, puis téléverse. Aucune autre bibliothèque externe n'est nécessaire. Ne touche pas le joystick au démarrage.
+
+## Guides et liens du projet
+
+| Ressource | Français | English |
+|---|---|---|
+| Guide de montage | [PDF](docs/FR_Desk_Watch_JOY_STUDENT_Guide_de_montage.pdf) | [PDF](docs/EN_Desk_Watch_JOY_STUDENT_Assembly_Guide.pdf) |
+| Mode d'emploi | [PDF](docs/FR_Desk_Watch_JOY_STUDENT_Mode_d_emploi.pdf) | [PDF](docs/EN_Desk_Watch_JOY_STUDENT_User_Guide.pdf) |
+| Schéma de câblage | [Image](docs/wiring_FR.png) | [Image](docs/wiring_EN.png) |
+
+- [MiniTech Club : tutoriel et installateur USB](https://minitech.club/desk-watch-joy-student/)
+- [Support : formulaire en bas de la page du projet](https://minitech.club/desk-watch-joy-student/#support)
+- [MakerWorld : boîtier à imprimer et profils d'impression](https://makerworld.com/models/3490181)
+- [Hackster : présentation du projet](https://www.hackster.io/Pr_Belamine_Makerlab/desk-watch-joy-student-arduino-uno-joystick-console-dcf03f)
+
+## Firmware et notes techniques
 
 Deux sketchs, un par langue : `Desk_Watch_JOY_STUDENT_Edition_FR` et `Desk_Watch_JOY_STUDENT_Edition_EN` (le dossier porte le nom du sketch, comme l'exige l'IDE Arduino).
 
